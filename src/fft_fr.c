@@ -30,6 +30,33 @@
 #include "utility.h"
 
 /**
+ * Slow Fourier Transform.
+ *
+ * This is simple, and ok for small sizes. It's mostly useful for testing.
+ *
+ * @param[out] out    The results (array of length @p n)
+ * @param[in]  in     The input data (array of length @p n * @p stride)
+ * @param[in]  stride The input data stride
+ * @param[in]  roots  Roots of unity (array of length @p n * @p roots_stride)
+ * @param[in]  roots_stride The stride interval among the roots of unity
+ * @param[in]  n      Length of the FFT, must be a power of two
+ */
+void fft_fr_slow(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride,
+                        uint64_t n) {
+    fr_t v, last, jv, r;
+    for (uint64_t i = 0; i < n; i++) {
+        fr_mul(&last, &in[0], &roots[0]);
+        for (uint64_t j = 1; j < n; j++) {
+            jv = in[j * stride];
+            r = roots[((i * j) % n) * roots_stride];
+            fr_mul(&v, &jv, &r);
+            fr_add(&last, &last, &v);
+        }
+        out[i] = last;
+    }
+}
+
+/**
  * Fast Fourier Transform.
  *
  * Recursively divide and conquer.
@@ -109,33 +136,6 @@ const uint64_t inv_fft_expected[][4] = {
     {0x066da6782f2da170L, 0x85c546f8cc60e47cL, 0x44bf3da90590f3e1L, 0x45e085f1b91a6cf1L},
     {0x16cf0224dcf9382cL, 0x12dd7903b71baa93L, 0xaf92c5362c204b76L, 0x163147176461030dL},
     {0x10d6917f04735deaL, 0x7e04a13731049a48L, 0x42cbd9ab89d7b1f7L, 0x60546bd624850b42L}};
-
-/**
- * Slow Fourier Transform.
- *
- * This is simple, and ok for small sizes. It's mostly useful for testing.
- *
- * @param[out] out    The results (array of length @p n)
- * @param[in]  in     The input data (array of length @p n * @p stride)
- * @param[in]  stride The input data stride
- * @param[in]  roots  Roots of unity (array of length @p n * @p roots_stride)
- * @param[in]  roots_stride The stride interval among the roots of unity
- * @param[in]  n      Length of the FFT, must be a power of two
- */
-void fft_fr_slow(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride,
-                        uint64_t n) {
-    fr_t v, last, jv, r;
-    for (uint64_t i = 0; i < n; i++) {
-        fr_mul(&last, &in[0], &roots[0]);
-        for (uint64_t j = 1; j < n; j++) {
-            jv = in[j * stride];
-            r = roots[((i * j) % n) * roots_stride];
-            fr_mul(&v, &jv, &r);
-            fr_add(&last, &last, &v);
-        }
-        out[i] = last;
-    }
-}
 
 void compare_sft_fft(void) {
     // Initialise: ascending values of i (could be anything), and arbitrary size
