@@ -174,4 +174,8 @@ C_KZG_RET zero_polynomial_via_multiplication(fr_t *zero_eval, poly *zero_poly, u
 
 C_KZG_RET das_fft_extension(fr_t *vals, uint64_t n, const FFTSettings *fs);
 
+static void fft_fr_slow(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride, uint64_t n);
+
+static void fft_fr_fast(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride, uint64_t n);
+
 #endif // C_KZG_H
