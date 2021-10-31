@@ -41,7 +41,7 @@
  * @param[in]  roots_stride The stride interval among the roots of unity
  * @param[in]  n      Length of the FFT, must be a power of two
  */
-static void fft_fr_fast(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride,
+void fft_fr_fast(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride,
                         uint64_t n) {
     uint64_t half = n / 2;
     if (half > 0) { // Tunable parameter
@@ -122,7 +122,7 @@ const uint64_t inv_fft_expected[][4] = {
  * @param[in]  roots_stride The stride interval among the roots of unity
  * @param[in]  n      Length of the FFT, must be a power of two
  */
-static void fft_fr_slow(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride,
+void fft_fr_slow(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride,
                         uint64_t n) {
     fr_t v, last, jv, r;
     for (uint64_t i = 0; i < n; i++) {
