@@ -30,6 +30,34 @@
 #include "utility.h"
 
 /**
+ * Slow Fourier Transform.
+ *
+ * This is simple, and ok for small sizes. It's mostly useful for testing.
+ *
+ * @param[out] out    The results (array of length @p n)
+ * @param[in]  in     The input data (array of length @p n * @p stride)
+ * @param[in]  stride The input data stride
+ * @param[in]  roots  Roots of unity (array of length @p n * @p roots_stride)
+ * @param[in]  roots_stride The stride interval among the roots of unity
+ * @param[in]  n      Length of the FFT, must be a power of two
+ */
+void fft_g1_slow(g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride,
+                        uint64_t n) {
+    g1_t v, last, jv;
+    fr_t r;
+    for (uint64_t i = 0; i < n; i++) {
+        g1_mul(&last, &in[0], &roots[0]);
+        for (uint64_t j = 1; j < n; j++) {
+            jv = in[j * stride];
+            r = roots[((i * j) % n) * roots_stride];
+            g1_mul(&v, &jv, &r);
+            g1_add_or_dbl(&last, &last, &v);
+        }
+        out[i] = last;
+    }
+}
+
+/**
  * Fast Fourier Transform.
  *
  * Recursively divide and conquer.
@@ -41,7 +69,7 @@
  * @param[in]  roots_stride The stride interval among the roots of unity
  * @param[in]  n      Length of the FFT, must be a power of two
  */
-static void fft_g1_fast(g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride,
+void fft_g1_fast(g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride,
                         uint64_t n) {
     uint64_t half = n / 2;
     if (half > 0) { // Tunable parameter
@@ -98,34 +126,6 @@ static void make_data(g1_t *out, uint64_t n) {
     *out = g1_generator;
     for (int i = 1; i < n; i++) {
         g1_add_or_dbl(out + i, out + i - 1, &g1_generator);
-    }
-}
-
-/**
- * Slow Fourier Transform.
- *
- * This is simple, and ok for small sizes. It's mostly useful for testing.
- *
- * @param[out] out    The results (array of length @p n)
- * @param[in]  in     The input data (array of length @p n * @p stride)
- * @param[in]  stride The input data stride
- * @param[in]  roots  Roots of unity (array of length @p n * @p roots_stride)
- * @param[in]  roots_stride The stride interval among the roots of unity
- * @param[in]  n      Length of the FFT, must be a power of two
- */
-static void fft_g1_slow(g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride,
-                        uint64_t n) {
-    g1_t v, last, jv;
-    fr_t r;
-    for (uint64_t i = 0; i < n; i++) {
-        g1_mul(&last, &in[0], &roots[0]);
-        for (uint64_t j = 1; j < n; j++) {
-            jv = in[j * stride];
-            r = roots[((i * j) % n) * roots_stride];
-            g1_mul(&v, &jv, &r);
-            g1_add_or_dbl(&last, &last, &v);
-        }
-        out[i] = last;
     }
 }
 
