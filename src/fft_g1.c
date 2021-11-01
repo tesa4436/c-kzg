@@ -29,6 +29,15 @@
 #include "c_kzg.h"
 #include "utility.h"
 
+void make_data(g1_t *out, uint64_t n) {
+    // Multiples of g1_gen
+    if (n == 0) return;
+    *out = g1_generator;
+    for (int i = 1; i < n; i++) {
+        g1_add_or_dbl(out + i, out + i - 1, &g1_generator);
+    }
+}
+
 /**
  * Slow Fourier Transform.
  *
@@ -119,15 +128,6 @@ C_KZG_RET fft_g1(g1_t *out, const g1_t *in, bool inverse, uint64_t n, const FFTS
 
 #include "../inc/acutest.h"
 #include "test_util.h"
-
-static void make_data(g1_t *out, uint64_t n) {
-    // Multiples of g1_gen
-    if (n == 0) return;
-    *out = g1_generator;
-    for (int i = 1; i < n; i++) {
-        g1_add_or_dbl(out + i, out + i - 1, &g1_generator);
-    }
-}
 
 void compare_sft_fft(void) {
     // Initialise: arbitrary size

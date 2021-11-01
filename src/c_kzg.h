@@ -182,4 +182,6 @@ void fft_g1_fast(g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, 
 
 void fft_g1_slow(g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride, uint64_t n);
 
+void make_data(g1_t *out, uint64_t n);
+
 #endif // C_KZG_H
