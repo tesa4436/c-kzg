@@ -23,6 +23,18 @@
 #include "control.h"
 #include "c_kzg_alloc.h"
 
+void generate_trusted_setup(g1_t *s1, g2_t *s2, const scalar_t *secret, const uint64_t n) {
+    fr_t s_pow, s;
+    fr_from_scalar(&s, secret);
+    s_pow = fr_one;
+
+    for (uint64_t i = 0; i < n; i++) {
+        g1_mul(s1 + i, &g1_generator, &s_pow);
+        g2_mul(s2 + i, &g2_generator, &s_pow);
+        fr_mul(&s_pow, &s_pow, &s);
+    }
+}
+
 /**
  * The first 32 roots of unity in the finite field F_r.
  *
