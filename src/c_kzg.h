@@ -184,4 +184,8 @@ void fft_g1_slow(g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, 
 
 void make_data(g1_t *out, uint64_t n);
 
+C_KZG_RET poly_long_div(poly *out, const poly *dividend, const poly *divisor);
+
+C_KZG_RET poly_fast_div(poly *out, const poly *dividend, const poly *divisor);
+
 #endif // C_KZG_H

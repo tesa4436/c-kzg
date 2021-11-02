@@ -36,6 +36,166 @@ static uint64_t poly_quotient_length(const poly *dividend, const poly *divisor) 
 }
 
 /**
+ * Reverse the order of the coefficients of a polynomial.
+ *
+ * Corresponds to returning x^n.p(1/x).
+ *
+ * @param[out] out The flipped polynomial. Its size must be the same as the size of @p in
+ * @param[in]  in  The polynomial to be flipped
+ * @retval C_CZK_OK      All is well
+ * @retval C_CZK_BADARGS Invalid parameters were supplied
+ */
+C_KZG_RET poly_flip(poly *out, const poly *in) {
+    CHECK(out->length == in->length);
+    for (uint64_t i = 0; i < in->length; i++) {
+        out->coeffs[out->length - i - 1] = in->coeffs[i];
+    }
+    return C_KZG_OK;
+}
+
+/**
+ * Polynomial division in the finite field via long division.
+ *
+ * Returns the polynomial resulting from dividing @p dividend by @p divisor.
+ *
+ * Should be O(m.n) where m is the length of the dividend, and n the length of the divisor.
+ *
+ * @remark @p out must be sized large enough for the resulting polynomial.
+ *
+ * @remark For some ranges of @p dividend and @p divisor, #poly_fast_div is much, much faster.
+ *
+ * @param[out] out      An appropriately sized poly type that will contain the result of the division
+ * @param[in]  dividend The dividend polynomial
+ * @param[in]  divisor  The divisor polynomial
+ * @retval C_CZK_OK      All is well
+ * @retval C_CZK_BADARGS Invalid parameters were supplied
+ * @retval C_CZK_MALLOC  Memory allocation failed
+ */
+C_KZG_RET poly_long_div(poly *out, const poly *dividend, const poly *divisor) {
+    uint64_t a_pos = dividend->length - 1;
+    uint64_t b_pos = divisor->length - 1;
+    uint64_t diff = a_pos - b_pos;
+    fr_t *a;
+
+    // Dividing by zero is undefined
+    CHECK(divisor->length > 0);
+
+    // The divisor's highest coefficient must be non-zero
+    CHECK(!fr_is_zero(&divisor->coeffs[divisor->length - 1]));
+
+    // Deal with the size of the output polynomial
+    uint64_t out_length = poly_quotient_length(dividend, divisor);
+    CHECK(out->length >= out_length);
+    out->length = out_length;
+
+    // If the divisor is larger than the dividend, the result is zero-length
+    if (out_length == 0) {
+        return C_KZG_OK;
+    }
+
+    TRY(new_fr_array(&a, dividend->length));
+    for (uint64_t i = 0; i < dividend->length; i++) {
+        a[i] = dividend->coeffs[i];
+    }
+
+    while (diff > 0) {
+        fr_div(&out->coeffs[diff], &a[a_pos], &divisor->coeffs[b_pos]);
+        for (uint64_t i = 0; i <= b_pos; i++) {
+            fr_t tmp;
+            // a[diff + i] -= b[i] * quot
+            fr_mul(&tmp, &out->coeffs[diff], &divisor->coeffs[i]);
+            fr_sub(&a[diff + i], &a[diff + i], &tmp);
+        }
+        --diff;
+        --a_pos;
+    }
+    fr_div(&out->coeffs[0], &a[a_pos], &divisor->coeffs[b_pos]);
+
+    free(a);
+    return C_KZG_OK;
+}
+
+/**
+ * Fast polynomial division in the finite field.
+ *
+ * Returns the polynomial resulting from dividing @p dividend by @p divisor.
+ *
+ * Implements https://tc-arg.tk/pdfs/2020/fft.pdf theorem 3.5.
+ *
+ * Should be O(m.log(m)) where m is the length of the dividend.
+ *
+ * @remark @p out must be sized large enough for the resulting polynomial.
+ *
+ * @remark For some ranges of @p dividend and @p divisor, #poly_long_div may be a little faster.
+ *
+ * @param[out] out      An appropriately sized poly type that will contain the result of the division
+ * @param[in]  dividend The dividend polynomial
+ * @param[in]  divisor  The divisor polynomial
+ * @retval C_CZK_OK      All is well
+ * @retval C_CZK_BADARGS Invalid parameters were supplied
+ * @retval C_CZK_ERROR   An internal error occurred
+ * @retval C_CZK_MALLOC  Memory allocation failed
+ */
+C_KZG_RET poly_fast_div(poly *out, const poly *dividend, const poly *divisor) {
+
+    // Dividing by zero is undefined
+    CHECK(divisor->length > 0);
+
+    // The divisor's highest coefficient must be non-zero
+    CHECK(!fr_is_zero(&divisor->coeffs[divisor->length - 1]));
+
+    uint64_t m = dividend->length - 1;
+    uint64_t n = divisor->length - 1;
+
+    // If the divisor is larger than the dividend, the result is zero-length
+    if (n > m) {
+        out->length = 0;
+        return C_KZG_OK;
+    }
+
+    // Ensure the output poly has enough space allocated
+    CHECK(out->length >= m - n + 1);
+
+    // Ensure that the divisor is well-formed for the inverse operation
+    CHECK(!fr_is_zero(&divisor->coeffs[divisor->length - 1]));
+
+    // Special case for divisor.length == 1 (it's a constant)
+    if (divisor->length == 1) {
+        out->length = dividend->length;
+        for (uint64_t i = 0; i < out->length; i++) {
+            fr_div(&out->coeffs[i], &dividend->coeffs[i], &divisor->coeffs[0]);
+        }
+        return C_KZG_OK;
+    }
+
+    poly a_flip, b_flip;
+    TRY(new_poly(&a_flip, dividend->length));
+    TRY(new_poly(&b_flip, divisor->length));
+    TRY(poly_flip(&a_flip, dividend));
+    TRY(poly_flip(&b_flip, divisor));
+
+    poly inv_b_flip;
+    TRY(new_poly(&inv_b_flip, m - n + 1));
+    TRY(poly_inverse(&inv_b_flip, &b_flip));
+
+    poly q_flip;
+    // We need only m - n + 1 coefficients of q_flip
+    TRY(new_poly(&q_flip, m - n + 1));
+    TRY(poly_mul(&q_flip, &a_flip, &inv_b_flip));
+
+    out->length = m - n + 1;
+    TRY(poly_flip(out, &q_flip));
+
+    free_poly(&a_flip);
+    free_poly(&b_flip);
+    free_poly(&inv_b_flip);
+    free_poly(&q_flip);
+
+    return C_KZG_OK;
+}
+
+
+/**
  * Pad with zeros or truncate an array of field elements to a specific size.
  *
  * @param[out] out   The padded/truncated array
@@ -102,67 +262,7 @@ void eval_poly(fr_t *out, const poly *p, const fr_t *x) {
     }
 }
 
-/**
- * Polynomial division in the finite field via long division.
- *
- * Returns the polynomial resulting from dividing @p dividend by @p divisor.
- *
- * Should be O(m.n) where m is the length of the dividend, and n the length of the divisor.
- *
- * @remark @p out must be sized large enough for the resulting polynomial.
- *
- * @remark For some ranges of @p dividend and @p divisor, #poly_fast_div is much, much faster.
- *
- * @param[out] out      An appropriately sized poly type that will contain the result of the division
- * @param[in]  dividend The dividend polynomial
- * @param[in]  divisor  The divisor polynomial
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_BADARGS Invalid parameters were supplied
- * @retval C_CZK_MALLOC  Memory allocation failed
- */
-static C_KZG_RET poly_long_div(poly *out, const poly *dividend, const poly *divisor) {
-    uint64_t a_pos = dividend->length - 1;
-    uint64_t b_pos = divisor->length - 1;
-    uint64_t diff = a_pos - b_pos;
-    fr_t *a;
 
-    // Dividing by zero is undefined
-    CHECK(divisor->length > 0);
-
-    // The divisor's highest coefficient must be non-zero
-    CHECK(!fr_is_zero(&divisor->coeffs[divisor->length - 1]));
-
-    // Deal with the size of the output polynomial
-    uint64_t out_length = poly_quotient_length(dividend, divisor);
-    CHECK(out->length >= out_length);
-    out->length = out_length;
-
-    // If the divisor is larger than the dividend, the result is zero-length
-    if (out_length == 0) {
-        return C_KZG_OK;
-    }
-
-    TRY(new_fr_array(&a, dividend->length));
-    for (uint64_t i = 0; i < dividend->length; i++) {
-        a[i] = dividend->coeffs[i];
-    }
-
-    while (diff > 0) {
-        fr_div(&out->coeffs[diff], &a[a_pos], &divisor->coeffs[b_pos]);
-        for (uint64_t i = 0; i <= b_pos; i++) {
-            fr_t tmp;
-            // a[diff + i] -= b[i] * quot
-            fr_mul(&tmp, &out->coeffs[diff], &divisor->coeffs[i]);
-            fr_sub(&a[diff + i], &a[diff + i], &tmp);
-        }
-        --diff;
-        --a_pos;
-    }
-    fr_div(&out->coeffs[0], &a[a_pos], &divisor->coeffs[b_pos]);
-
-    free(a);
-    return C_KZG_OK;
-}
 
 /**
  * Calculate the (possibly truncated) product of two polynomials.
@@ -357,102 +457,8 @@ C_KZG_RET poly_inverse(poly *out, poly *b) {
     return C_KZG_OK;
 }
 
-/**
- * Reverse the order of the coefficients of a polynomial.
- *
- * Corresponds to returning x^n.p(1/x).
- *
- * @param[out] out The flipped polynomial. Its size must be the same as the size of @p in
- * @param[in]  in  The polynomial to be flipped
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_BADARGS Invalid parameters were supplied
- */
-C_KZG_RET poly_flip(poly *out, const poly *in) {
-    CHECK(out->length == in->length);
-    for (uint64_t i = 0; i < in->length; i++) {
-        out->coeffs[out->length - i - 1] = in->coeffs[i];
-    }
-    return C_KZG_OK;
-}
 
-/**
- * Fast polynomial division in the finite field.
- *
- * Returns the polynomial resulting from dividing @p dividend by @p divisor.
- *
- * Implements https://tc-arg.tk/pdfs/2020/fft.pdf theorem 3.5.
- *
- * Should be O(m.log(m)) where m is the length of the dividend.
- *
- * @remark @p out must be sized large enough for the resulting polynomial.
- *
- * @remark For some ranges of @p dividend and @p divisor, #poly_long_div may be a little faster.
- *
- * @param[out] out      An appropriately sized poly type that will contain the result of the division
- * @param[in]  dividend The dividend polynomial
- * @param[in]  divisor  The divisor polynomial
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_BADARGS Invalid parameters were supplied
- * @retval C_CZK_ERROR   An internal error occurred
- * @retval C_CZK_MALLOC  Memory allocation failed
- */
-static C_KZG_RET poly_fast_div(poly *out, const poly *dividend, const poly *divisor) {
 
-    // Dividing by zero is undefined
-    CHECK(divisor->length > 0);
-
-    // The divisor's highest coefficient must be non-zero
-    CHECK(!fr_is_zero(&divisor->coeffs[divisor->length - 1]));
-
-    uint64_t m = dividend->length - 1;
-    uint64_t n = divisor->length - 1;
-
-    // If the divisor is larger than the dividend, the result is zero-length
-    if (n > m) {
-        out->length = 0;
-        return C_KZG_OK;
-    }
-
-    // Ensure the output poly has enough space allocated
-    CHECK(out->length >= m - n + 1);
-
-    // Ensure that the divisor is well-formed for the inverse operation
-    CHECK(!fr_is_zero(&divisor->coeffs[divisor->length - 1]));
-
-    // Special case for divisor.length == 1 (it's a constant)
-    if (divisor->length == 1) {
-        out->length = dividend->length;
-        for (uint64_t i = 0; i < out->length; i++) {
-            fr_div(&out->coeffs[i], &dividend->coeffs[i], &divisor->coeffs[0]);
-        }
-        return C_KZG_OK;
-    }
-
-    poly a_flip, b_flip;
-    TRY(new_poly(&a_flip, dividend->length));
-    TRY(new_poly(&b_flip, divisor->length));
-    TRY(poly_flip(&a_flip, dividend));
-    TRY(poly_flip(&b_flip, divisor));
-
-    poly inv_b_flip;
-    TRY(new_poly(&inv_b_flip, m - n + 1));
-    TRY(poly_inverse(&inv_b_flip, &b_flip));
-
-    poly q_flip;
-    // We need only m - n + 1 coefficients of q_flip
-    TRY(new_poly(&q_flip, m - n + 1));
-    TRY(poly_mul(&q_flip, &a_flip, &inv_b_flip));
-
-    out->length = m - n + 1;
-    TRY(poly_flip(out, &q_flip));
-
-    free_poly(&a_flip);
-    free_poly(&b_flip);
-    free_poly(&inv_b_flip);
-    free_poly(&q_flip);
-
-    return C_KZG_OK;
-}
 
 /**
  * Calculate the (possibly truncated) product of two polynomials.
