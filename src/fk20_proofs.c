@@ -469,8 +469,6 @@ void free_fk20_multi_settings(FK20MultiSettings *fk) {
     fk->length = 0;
 }
 
-#ifdef KZGTEST
-
 #include "../inc/acutest.h"
 #include "test_util.h"
 
