@@ -202,5 +202,12 @@ C_KZG_RET new_fk20_single_settings(FK20SingleSettings *fk, uint64_t n2, const KZ
 C_KZG_RET new_fk20_multi_settings(FK20MultiSettings *fk, uint64_t n2, uint64_t chunk_len, const KZGSettings *ks);
 void free_fk20_single_settings(FK20SingleSettings *fk);
 void free_fk20_multi_settings(FK20MultiSettings *fk);
+void fk_single(void);
+void fk_single_strided(void);
+void fk_multi_settings(void);
+void fk_multi_case(int chunk_len, int n);
+void fk_multi_chunk_len_16_512();
+void fk_multi_chunk_len_1_512();
+void fk_multi_chunk_len_16_16();
 
 #endif // C_KZG_H
