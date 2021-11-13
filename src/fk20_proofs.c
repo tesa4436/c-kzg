@@ -39,7 +39,7 @@
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-static C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, uint64_t n, const FFTSettings *fs) {
+C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, uint64_t n, const FFTSettings *fs) {
     uint64_t n2 = n * 2;
     g1_t *x_ext;
 
@@ -69,7 +69,7 @@ static C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, uint64_t n, const FFT
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-static C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g1_t *x_ext_fft, const FFTSettings *fs) {
+C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g1_t *x_ext_fft, const FFTSettings *fs) {
     fr_t *toeplitz_coeffs_fft;
 
     // CHECK(toeplitz_coeffs->length == fk->x_ext_fft_len); // TODO: how to implement?
@@ -95,7 +95,7 @@ static C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g
  * @retval C_CZK_OK      All is well
  * @retval C_CZK_ERROR   An internal error occurred
  */
-static C_KZG_RET toeplitz_part_3(g1_t *out, const g1_t *h_ext_fft, uint64_t n2, const FFTSettings *fs) {
+C_KZG_RET toeplitz_part_3(g1_t *out, const g1_t *h_ext_fft, uint64_t n2, const FFTSettings *fs) {
     uint64_t n = n2 / 2;
 
     TRY(fft_g1(out, h_ext_fft, true, n2, fs));
@@ -121,7 +121,7 @@ static C_KZG_RET toeplitz_part_3(g1_t *out, const g1_t *h_ext_fft, uint64_t n2, 
  * @retval C_CZK_BADARGS Invalid parameters were supplied
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-static C_KZG_RET toeplitz_coeffs_stride(poly *out, const poly *in, uint64_t offset, uint64_t stride) {
+C_KZG_RET toeplitz_coeffs_stride(poly *out, const poly *in, uint64_t offset, uint64_t stride) {
     uint64_t n = in->length, k, k2;
 
     CHECK(stride > 0);
@@ -152,53 +152,10 @@ static C_KZG_RET toeplitz_coeffs_stride(poly *out, const poly *in, uint64_t offs
  * @retval C_CZK_OK      All is well
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-static C_KZG_RET toeplitz_coeffs_step(poly *out, const poly *in) {
+C_KZG_RET toeplitz_coeffs_step(poly *out, const poly *in) {
     return toeplitz_coeffs_stride(out, in, 0, 1);
 }
 
-/**
- * Optimised version of the FK20 algorithm for use in data availability checks.
- *
- * Simultaneously calculates all the KZG proofs for `x_i = w^i` (`0 <= i < 2n`), where `w` is a `(2 * n)`th root of
- * unity. The `2n` comes from the polynomial being extended with zeros to twice the original size.
- *
- * `out[i]` is the proof for `y[i]`, the evaluation of the polynomial at `fs.expanded_roots_of_unity[i]`.
- *
- * @remark Only the lower half of the polynomial is supplied; the upper, zero, half is assumed. The
- * #toeplitz_coeffs_step routine does the right thing.
- *
- * @param[out] out Array size `n * 2`
- * @param[in]  p   Polynomial, size `n`
- * @param[in]  fk  FK20 single settings previously initialised by #new_fk20_single_settings
- * @retval C_CZK_OK      All is well
- * @retval C_CZK_BADARGS Invalid parameters were supplied
- * @retval C_CZK_ERROR   An internal error occurred
- * @retval C_CZK_MALLOC  Memory allocation failed
- */
-static C_KZG_RET fk20_single_da_opt(g1_t *out, const poly *p, const FK20SingleSettings *fk) {
-    uint64_t n = p->length, n2 = n * 2;
-    g1_t *h, *h_ext_fft;
-    poly toeplitz_coeffs;
-
-    CHECK(n2 <= fk->ks->fs->max_width);
-    CHECK(is_power_of_two(n));
-
-    TRY(new_poly(&toeplitz_coeffs, 2 * p->length));
-    TRY(toeplitz_coeffs_step(&toeplitz_coeffs, p));
-
-    TRY(new_g1_array(&h_ext_fft, toeplitz_coeffs.length));
-    TRY(toeplitz_part_2(h_ext_fft, &toeplitz_coeffs, fk->x_ext_fft, fk->ks->fs));
-
-    TRY(new_g1_array(&h, n2));
-    TRY(toeplitz_part_3(h, h_ext_fft, n2, fk->ks->fs));
-
-    TRY(fft_g1(out, h, false, n2, fk->ks->fs));
-
-    free_poly(&toeplitz_coeffs);
-    free(h_ext_fft);
-    free(h);
-    return C_KZG_OK;
-}
 
 /**
  * Data availability using the FK20 single algorithm.
@@ -292,7 +249,7 @@ C_KZG_RET fk20_compute_proof_multi(g1_t *out, const poly *p, const FK20MultiSett
  * @param[in]  p   The polynomial, length `n`
  * @param[in]  fk  FK20 multi settings previously initialised by #new_fk20_multi_settings
  */
-static C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSettings *fk) {
+C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSettings *fk) {
     uint64_t n = p->length, n2 = n * 2, k, k2;
     g1_t *h_ext_fft, *h_ext_fft_file, *h;
     poly toeplitz_coeffs;
@@ -442,6 +399,50 @@ C_KZG_RET new_fk20_multi_settings(FK20MultiSettings *fk, uint64_t n2, uint64_t c
     }
 
     free(x);
+    return C_KZG_OK;
+}
+
+/**
+ * Optimised version of the FK20 algorithm for use in data availability checks.
+ *
+ * Simultaneously calculates all the KZG proofs for `x_i = w^i` (`0 <= i < 2n`), where `w` is a `(2 * n)`th root of
+ * unity. The `2n` comes from the polynomial being extended with zeros to twice the original size.
+ *
+ * `out[i]` is the proof for `y[i]`, the evaluation of the polynomial at `fs.expanded_roots_of_unity[i]`.
+ *
+ * @remark Only the lower half of the polynomial is supplied; the upper, zero, half is assumed. The
+ * #toeplitz_coeffs_step routine does the right thing.
+ *
+ * @param[out] out Array size `n * 2`
+ * @param[in]  p   Polynomial, size `n`
+ * @param[in]  fk  FK20 single settings previously initialised by #new_fk20_single_settings
+ * @retval C_CZK_OK      All is well
+ * @retval C_CZK_BADARGS Invalid parameters were supplied
+ * @retval C_CZK_ERROR   An internal error occurred
+ * @retval C_CZK_MALLOC  Memory allocation failed
+ */
+C_KZG_RET fk20_single_da_opt(g1_t *out, const poly *p, const FK20SingleSettings *fk) {
+    uint64_t n = p->length, n2 = n * 2;
+    g1_t *h, *h_ext_fft;
+    poly toeplitz_coeffs;
+
+    CHECK(n2 <= fk->ks->fs->max_width);
+    CHECK(is_power_of_two(n));
+
+    TRY(new_poly(&toeplitz_coeffs, 2 * p->length));
+    TRY(toeplitz_coeffs_step(&toeplitz_coeffs, p));
+
+    TRY(new_g1_array(&h_ext_fft, toeplitz_coeffs.length));
+    TRY(toeplitz_part_2(h_ext_fft, &toeplitz_coeffs, fk->x_ext_fft, fk->ks->fs));
+
+    TRY(new_g1_array(&h, n2));
+    TRY(toeplitz_part_3(h, h_ext_fft, n2, fk->ks->fs));
+
+    TRY(fft_g1(out, h, false, n2, fk->ks->fs));
+
+    free_poly(&toeplitz_coeffs);
+    free(h_ext_fft);
+    free(h);
     return C_KZG_OK;
 }
 
