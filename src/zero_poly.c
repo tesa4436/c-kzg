@@ -39,7 +39,7 @@
  * @retval C_CZK_OK      All is well
  * @retval C_CZK_BADARGS Invalid parameters were supplied
  */
-static C_KZG_RET do_zero_poly_mul_partial(poly *dst, const uint64_t *indices, uint64_t len_indices, uint64_t stride,
+C_KZG_RET do_zero_poly_mul_partial(poly *dst, const uint64_t *indices, uint64_t len_indices, uint64_t stride,
                                           const FFTSettings *fs) {
 
     CHECK(len_indices > 0);
@@ -79,7 +79,7 @@ static C_KZG_RET do_zero_poly_mul_partial(poly *dst, const uint64_t *indices, ui
  * @retval C_CZK_OK      All is well
  * @retval C_CZK_BADARGS Invalid parameters were supplied
  */
-static C_KZG_RET pad_p(fr_t *out, uint64_t out_len, const poly *p) {
+C_KZG_RET pad_p(fr_t *out, uint64_t out_len, const poly *p) {
     CHECK(out_len >= p->length);
     for (uint64_t i = 0; i < p->length; i++) {
         out[i] = p->coeffs[i];
@@ -107,7 +107,7 @@ static C_KZG_RET pad_p(fr_t *out, uint64_t out_len, const poly *p) {
  * @retval C_CZK_BADARGS Invalid parameters were supplied
  * @retval C_CZK_ERROR   An internal error occurred
  */
-static C_KZG_RET reduce_partials(poly *out, uint64_t len_out, fr_t *scratch, uint64_t len_scratch, const poly *partials,
+C_KZG_RET reduce_partials(poly *out, uint64_t len_out, fr_t *scratch, uint64_t len_scratch, const poly *partials,
                                  uint64_t partial_count, const FFTSettings *fs) {
     CHECK(is_power_of_two(len_out));
     CHECK(len_scratch >= 3 * len_out);
