@@ -194,14 +194,8 @@ C_KZG_RET toeplitz_part_3(g1_t *out, const g1_t *h_ext_fft, uint64_t n2, const F
 C_KZG_RET toeplitz_coeffs_stride(poly *out, const poly *in, uint64_t offset, uint64_t stride);
 C_KZG_RET toeplitz_coeffs_step(poly *out, const poly *in);
 C_KZG_RET fk20_single_da_opt(g1_t *out, const poly *p, const FK20SingleSettings *fk);
-C_KZG_RET da_using_fk20_single(g1_t *out, const poly *p, const FK20SingleSettings *fk);
 C_KZG_RET fk20_compute_proof_multi(g1_t *out, const poly *p, const FK20MultiSettings *fk);
 C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSettings *fk);
-C_KZG_RET da_using_fk20_multi(g1_t *out, const poly *p, const FK20MultiSettings *fk);
-C_KZG_RET new_fk20_single_settings(FK20SingleSettings *fk, uint64_t n2, const KZGSettings *ks);
-C_KZG_RET new_fk20_multi_settings(FK20MultiSettings *fk, uint64_t n2, uint64_t chunk_len, const KZGSettings *ks);
-void free_fk20_single_settings(FK20SingleSettings *fk);
-void free_fk20_multi_settings(FK20MultiSettings *fk);
 void fk_single(void);
 void fk_single_strided(void);
 void fk_multi_settings(void);
@@ -212,6 +206,5 @@ void fk_multi_chunk_len_16_16();
 C_KZG_RET do_zero_poly_mul_partial(poly *dst, const uint64_t *indices, uint64_t len_indices, uint64_t stride, const FFTSettings *fs);
 C_KZG_RET pad_p(fr_t *out, uint64_t out_len, const poly *p);
 C_KZG_RET reduce_partials(poly *out, uint64_t len_out, fr_t *scratch, uint64_t len_scratch, const poly *partials, uint64_t partial_count, const FFTSettings *fs);
-C_KZG_RET zero_polynomial_via_multiplication(fr_t *zero_eval, poly *zero_poly, uint64_t length, const uint64_t *missing_indices, uint64_t len_missing, const FFTSettings *fs);
 
 #endif // C_KZG_H
