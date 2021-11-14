@@ -188,16 +188,4 @@ C_KZG_RET poly_long_div(poly *out, const poly *dividend, const poly *divisor);
 
 C_KZG_RET poly_fast_div(poly *out, const poly *dividend, const poly *divisor);
 
-C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, uint64_t n, const FFTSettings *fs);
-C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g1_t *x_ext_fft, const FFTSettings *fs);
-C_KZG_RET toeplitz_part_3(g1_t *out, const g1_t *h_ext_fft, uint64_t n2, const FFTSettings *fs);
-C_KZG_RET toeplitz_coeffs_stride(poly *out, const poly *in, uint64_t offset, uint64_t stride);
-C_KZG_RET toeplitz_coeffs_step(poly *out, const poly *in);
-C_KZG_RET fk20_single_da_opt(g1_t *out, const poly *p, const FK20SingleSettings *fk);
-C_KZG_RET fk20_compute_proof_multi(g1_t *out, const poly *p, const FK20MultiSettings *fk);
-C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSettings *fk);
-C_KZG_RET do_zero_poly_mul_partial(poly *dst, const uint64_t *indices, uint64_t len_indices, uint64_t stride, const FFTSettings *fs);
-C_KZG_RET pad_p(fr_t *out, uint64_t out_len, const poly *p);
-C_KZG_RET reduce_partials(poly *out, uint64_t len_out, fr_t *scratch, uint64_t len_scratch, const poly *partials, uint64_t partial_count, const FFTSettings *fs);
-
 #endif // C_KZG_H
