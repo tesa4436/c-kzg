@@ -39,7 +39,7 @@
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-static C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, uint64_t n, const FFTSettings *fs) {
+C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, uint64_t n, const FFTSettings *fs) {
     uint64_t n2 = n * 2;
     g1_t *x_ext;
 
@@ -69,7 +69,7 @@ static C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, uint64_t n, const FFT
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-static C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g1_t *x_ext_fft, const FFTSettings *fs) {
+C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g1_t *x_ext_fft, const FFTSettings *fs) {
     fr_t *toeplitz_coeffs_fft;
 
     // CHECK(toeplitz_coeffs->length == fk->x_ext_fft_len); // TODO: how to implement?
@@ -95,7 +95,7 @@ static C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g
  * @retval C_CZK_OK      All is well
  * @retval C_CZK_ERROR   An internal error occurred
  */
-static C_KZG_RET toeplitz_part_3(g1_t *out, const g1_t *h_ext_fft, uint64_t n2, const FFTSettings *fs) {
+C_KZG_RET toeplitz_part_3(g1_t *out, const g1_t *h_ext_fft, uint64_t n2, const FFTSettings *fs) {
     uint64_t n = n2 / 2;
 
     TRY(fft_g1(out, h_ext_fft, true, n2, fs));
@@ -121,7 +121,7 @@ static C_KZG_RET toeplitz_part_3(g1_t *out, const g1_t *h_ext_fft, uint64_t n2, 
  * @retval C_CZK_BADARGS Invalid parameters were supplied
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-static C_KZG_RET toeplitz_coeffs_stride(poly *out, const poly *in, uint64_t offset, uint64_t stride) {
+C_KZG_RET toeplitz_coeffs_stride(poly *out, const poly *in, uint64_t offset, uint64_t stride) {
     uint64_t n = in->length, k, k2;
 
     CHECK(stride > 0);
@@ -152,7 +152,7 @@ static C_KZG_RET toeplitz_coeffs_stride(poly *out, const poly *in, uint64_t offs
  * @retval C_CZK_OK      All is well
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-static C_KZG_RET toeplitz_coeffs_step(poly *out, const poly *in) {
+C_KZG_RET toeplitz_coeffs_step(poly *out, const poly *in) {
     return toeplitz_coeffs_stride(out, in, 0, 1);
 }
 
@@ -175,7 +175,7 @@ static C_KZG_RET toeplitz_coeffs_step(poly *out, const poly *in) {
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-static C_KZG_RET fk20_single_da_opt(g1_t *out, const poly *p, const FK20SingleSettings *fk) {
+C_KZG_RET fk20_single_da_opt(g1_t *out, const poly *p, const FK20SingleSettings *fk) {
     uint64_t n = p->length, n2 = n * 2;
     g1_t *h, *h_ext_fft;
     poly toeplitz_coeffs;
@@ -292,7 +292,7 @@ C_KZG_RET fk20_compute_proof_multi(g1_t *out, const poly *p, const FK20MultiSett
  * @param[in]  p   The polynomial, length `n`
  * @param[in]  fk  FK20 multi settings previously initialised by #new_fk20_multi_settings
  */
-static C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSettings *fk) {
+C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSettings *fk) {
     uint64_t n = p->length, n2 = n * 2, k, k2;
     g1_t *h_ext_fft, *h_ext_fft_file, *h;
     poly toeplitz_coeffs;
