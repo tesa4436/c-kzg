@@ -470,6 +470,8 @@ void free_fk20_multi_settings(FK20MultiSettings *fk) {
     fk->length = 0;
 }
 
+#ifdef KZGTEST
+
 #include "../inc/acutest.h"
 #include "test_util.h"
 
@@ -762,3 +764,5 @@ TEST_LIST = {
     {"fk_multi_chunk_len_16_16", fk_multi_chunk_len_16_16},
     {NULL, NULL} /* zero record marks the end of the list */
 };
+
+#endif // KZGTEST
