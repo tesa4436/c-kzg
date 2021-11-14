@@ -206,5 +206,6 @@ void fk_multi_chunk_len_16_16();
 C_KZG_RET do_zero_poly_mul_partial(poly *dst, const uint64_t *indices, uint64_t len_indices, uint64_t stride, const FFTSettings *fs);
 C_KZG_RET pad_p(fr_t *out, uint64_t out_len, const poly *p);
 C_KZG_RET reduce_partials(poly *out, uint64_t len_out, fr_t *scratch, uint64_t len_scratch, const poly *partials, uint64_t partial_count, const FFTSettings *fs);
+C_KZG_RET reverse_bit_order(void *values, size_t size, uint64_t n);
 
 #endif // C_KZG_H
