@@ -25,6 +25,8 @@
  * @remark Functions here work only for lengths that are a power of two.
  */
 
+#include <omp.h>
+
 #include "control.h"
 #include "c_kzg.h"
 #include "utility.h"
@@ -82,8 +84,17 @@ void fft_g1_fast(g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, 
                         uint64_t n) {
     uint64_t half = n / 2;
     if (half > 0) { // Tunable parameter
-        fft_g1_fast(out, in, stride * 2, roots, roots_stride * 2, half);
-        fft_g1_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half);
+        #pragma omp parallel sections
+        {
+            #pragma omp section
+            {
+                fft_g1_fast(out, in, stride * 2, roots, roots_stride * 2, half);
+            }
+            #pragma omp section
+            {
+                fft_g1_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half);
+            }
+        }
         for (uint64_t i = 0; i < half; i++) {
             g1_t y_times_root;
             g1_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
