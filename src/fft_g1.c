@@ -95,6 +95,8 @@ void fft_g1_fast(g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, 
                 fft_g1_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half);
             }
         }
+        #pragma omp parallel
+        #pragma omp for
         for (uint64_t i = 0; i < half; i++) {
             g1_t y_times_root;
             g1_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
@@ -126,6 +128,8 @@ C_KZG_RET fft_g1(g1_t *out, const g1_t *in, bool inverse, uint64_t n, const FFTS
         fr_from_uint64(&inv_len, n);
         fr_inv(&inv_len, &inv_len);
         fft_g1_fast(out, in, 1, fs->reverse_roots_of_unity, stride, n);
+        #pragma omp parallel
+        #pragma omp for
         for (uint64_t i = 0; i < n; i++) {
             g1_mul(&out[i], &out[i], &inv_len);
         }

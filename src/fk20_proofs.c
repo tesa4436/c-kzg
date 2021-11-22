@@ -23,6 +23,8 @@
  * @todo Split this out into smaller files.
  */
 
+#include <omp.h>
+
 #include "control.h"
 #include "c_kzg_alloc.h"
 #include "utility.h"
@@ -77,6 +79,8 @@ C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g1_t *x_
     TRY(new_fr_array(&toeplitz_coeffs_fft, toeplitz_coeffs->length));
     TRY(fft_fr(toeplitz_coeffs_fft, toeplitz_coeffs->coeffs, false, toeplitz_coeffs->length, fs));
 
+    #pragma omp parallel
+    #pragma omp for
     for (uint64_t i = 0; i < toeplitz_coeffs->length; i++) {
         g1_mul(&out[i], &x_ext_fft[i], &toeplitz_coeffs_fft[i]);
     }
