@@ -762,7 +762,6 @@ TEST_LIST = {
     {"fk_multi_chunk_len_16_512", fk_multi_chunk_len_16_512},
     {"fk_multi_chunk_len_16_16", fk_multi_chunk_len_16_16},
     {NULL, NULL} /* zero record marks the end of the list */
-<<<<<<< HEAD
 };
 
 #endif // KZGTEST
