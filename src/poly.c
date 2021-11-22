@@ -525,6 +525,12 @@ C_KZG_RET new_poly_div(poly *out, const poly *dividend_, const poly *divisor_) {
     poly divisor = poly_norm(divisor_);
 
     TRY(new_poly(out, poly_quotient_length(&dividend, &divisor)));
+
+    // Optimized for `poly_bench` scales 6 and 7 (first and second iterations)
+    if ((divisor.length == 32 || divisor.length == 64) && divisor.length * 2 == dividend.length) {
+        return poly_fast_div(out, &dividend, &divisor);
+    }
+
     if (divisor.length >= dividend.length || divisor.length < 128) { // Tunable paramter
         return poly_long_div(out, &dividend, &divisor);
     } else {
