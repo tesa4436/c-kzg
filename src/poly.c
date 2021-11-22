@@ -457,6 +457,9 @@ C_KZG_RET poly_inverse(poly *out, poly *b) {
     return C_KZG_OK;
 }
 
+
+
+
 /**
  * Calculate the (possibly truncated) product of two polynomials.
  *
@@ -517,10 +520,16 @@ C_KZG_RET poly_mul(poly *out, const poly *a, const poly *b) {
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
 C_KZG_RET new_poly_div(poly *out, const poly *dividend_, const poly *divisor_) {
+
     poly dividend = poly_norm(dividend_);
     poly divisor = poly_norm(divisor_);
+
     TRY(new_poly(out, poly_quotient_length(&dividend, &divisor)));
-    return poly_fast_div(out, &dividend, &divisor);
+    if (divisor.length >= dividend.length || divisor.length < 128) { // Tunable paramter
+        return poly_long_div(out, &dividend, &divisor);
+    } else {
+        return poly_fast_div(out, &dividend, &divisor);
+    }
 }
 
 /**
