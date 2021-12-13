@@ -153,11 +153,7 @@ C_KZG_RET fft_g1(g1_t *out, const g1_t *in, bool inverse, uint64_t n, const FFTS
             }
         }
     } else {
-        if (run_parallel) {
-            fft_g1_fast(out, in, 1, fs->expanded_roots_of_unity, stride, n, true);
-        } else {
-            fft_g1_fast(out, in, 1, fs->expanded_roots_of_unity, stride, n, false);
-        }
+        fft_g1_fast(out, in, 1, fs->expanded_roots_of_unity, stride, n, run_parallel);
     }
     return C_KZG_OK;
 }
