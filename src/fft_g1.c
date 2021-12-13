@@ -81,27 +81,39 @@ void fft_g1_slow(g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, 
  * @param[in]  n      Length of the FFT, must be a power of two
  */
 void fft_g1_fast(g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride,
-                        uint64_t n) {
+                 uint64_t n, bool run_parallel) {
     uint64_t half = n / 2;
     if (half > 0) { // Tunable parameter
-        #pragma omp parallel sections
-        {
-            #pragma omp section
+        if (run_parallel) {
+            #pragma omp parallel sections
             {
-                fft_g1_fast(out, in, stride * 2, roots, roots_stride * 2, half);
+                #pragma omp section
+                {
+                    fft_g1_fast(out, in, stride * 2, roots, roots_stride * 2, half, true);
+                }
+                #pragma omp section
+                {
+                    fft_g1_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half, true);
+                }
             }
-            #pragma omp section
-            {
-                fft_g1_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half);
+            #pragma omp parallel
+            #pragma omp for
+            for (uint64_t i = 0; i < half; i++) {
+                g1_t y_times_root;
+                g1_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
+                g1_sub(&out[i + half], &out[i], &y_times_root);
+                g1_add_or_dbl(&out[i], &out[i], &y_times_root);
             }
-        }
-        #pragma omp parallel
-        #pragma omp for
-        for (uint64_t i = 0; i < half; i++) {
-            g1_t y_times_root;
-            g1_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
-            g1_sub(&out[i + half], &out[i], &y_times_root);
-            g1_add_or_dbl(&out[i], &out[i], &y_times_root);
+        } else {
+            fft_g1_fast(out, in, stride * 2, roots, roots_stride * 2, half, false);
+            fft_g1_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half, false);
+
+            for (uint64_t i = 0; i < half; i++) {
+                g1_t y_times_root;
+                g1_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
+                g1_sub(&out[i + half], &out[i], &y_times_root);
+                g1_add_or_dbl(&out[i], &out[i], &y_times_root);
+            }
         }
     } else {
         *out = *in;
@@ -119,7 +131,7 @@ void fft_g1_fast(g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, 
  * @retval C_CZK_OK      All is well
  * @retval C_CZK_BADARGS Invalid parameters were supplied
  */
-C_KZG_RET fft_g1(g1_t *out, const g1_t *in, bool inverse, uint64_t n, const FFTSettings *fs) {
+C_KZG_RET fft_g1(g1_t *out, const g1_t *in, bool inverse, uint64_t n, const FFTSettings *fs, bool run_parallel) {
     uint64_t stride = fs->max_width / n;
     CHECK(n <= fs->max_width);
     CHECK(is_power_of_two(n));
@@ -127,14 +139,25 @@ C_KZG_RET fft_g1(g1_t *out, const g1_t *in, bool inverse, uint64_t n, const FFTS
         fr_t inv_len;
         fr_from_uint64(&inv_len, n);
         fr_inv(&inv_len, &inv_len);
-        fft_g1_fast(out, in, 1, fs->reverse_roots_of_unity, stride, n);
-        #pragma omp parallel
-        #pragma omp for
-        for (uint64_t i = 0; i < n; i++) {
-            g1_mul(&out[i], &out[i], &inv_len);
+        if (run_parallel) {
+            fft_g1_fast(out, in, 1, fs->reverse_roots_of_unity, stride, n, true);
+            #pragma omp parallel
+            #pragma omp for
+            for (uint64_t i = 0; i < n; i++) {
+                g1_mul(&out[i], &out[i], &inv_len);
+            }
+        } else {
+            fft_g1_fast(out, in, 1, fs->reverse_roots_of_unity, stride, n, false);
+            for (uint64_t i = 0; i < n; i++) {
+                g1_mul(&out[i], &out[i], &inv_len);
+            }
         }
     } else {
-        fft_g1_fast(out, in, 1, fs->expanded_roots_of_unity, stride, n);
+        if (run_parallel) {
+            fft_g1_fast(out, in, 1, fs->expanded_roots_of_unity, stride, n, true);
+        } else {
+            fft_g1_fast(out, in, 1, fs->expanded_roots_of_unity, stride, n, false);
+        }
     }
     return C_KZG_OK;
 }
@@ -154,7 +177,7 @@ void compare_sft_fft(void) {
 
     // Do both fast and slow transforms
     fft_g1_slow(slow, data, 1, fs.expanded_roots_of_unity, 1, fs.max_width);
-    fft_g1_fast(fast, data, 1, fs.expanded_roots_of_unity, 1, fs.max_width);
+    fft_g1_fast(fast, data, 1, fs.expanded_roots_of_unity, 1, fs.max_width, true);
 
     // Verify the results are identical
     for (int i = 0; i < fs.max_width; i++) {
@@ -174,8 +197,8 @@ void roundtrip_fft(void) {
     make_data(data, fs.max_width);
 
     // Forward and reverse FFT
-    TEST_CHECK(fft_g1(coeffs, data, false, fs.max_width, &fs) == C_KZG_OK);
-    TEST_CHECK(fft_g1(data, coeffs, true, fs.max_width, &fs) == C_KZG_OK);
+    TEST_CHECK(fft_g1(coeffs, data, false, fs.max_width, &fs, true) == C_KZG_OK);
+    TEST_CHECK(fft_g1(data, coeffs, true, fs.max_width, &fs, true) == C_KZG_OK);
 
     // Verify that the result is still ascending values of i
     for (int i = 0; i < fs.max_width; i++) {
@@ -194,8 +217,8 @@ void stride_fft(void) {
     g1_t data[width], coeffs1[width], coeffs2[width];
     make_data(data, width);
 
-    TEST_CHECK(fft_g1(coeffs1, data, false, width, &fs1) == C_KZG_OK);
-    TEST_CHECK(fft_g1(coeffs2, data, false, width, &fs2) == C_KZG_OK);
+    TEST_CHECK(fft_g1(coeffs1, data, false, width, &fs1, true) == C_KZG_OK);
+    TEST_CHECK(fft_g1(coeffs2, data, false, width, &fs2, true) == C_KZG_OK);
 
     for (int i = 0; i < width; i++) {
         TEST_CHECK(g1_equal(coeffs1 + i, coeffs2 + i));
