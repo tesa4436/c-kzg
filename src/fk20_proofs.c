@@ -53,7 +53,7 @@ C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, uint64_t n, const FFTSetting
         x_ext[i] = g1_identity;
     }
 
-    TRY(fft_g1(out, x_ext, false, n2, fs));
+    TRY(fft_g1(out, x_ext, false, n2, fs, true));
 
     free(x_ext);
     return C_KZG_OK;
@@ -71,7 +71,8 @@ C_KZG_RET toeplitz_part_1(g1_t *out, const g1_t *x, uint64_t n, const FFTSetting
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g1_t *x_ext_fft, const FFTSettings *fs) {
+C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g1_t *x_ext_fft, const FFTSettings *fs,
+                          bool run_parallel) {
     fr_t *toeplitz_coeffs_fft;
 
     // CHECK(toeplitz_coeffs->length == fk->x_ext_fft_len); // TODO: how to implement?
@@ -79,10 +80,16 @@ C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g1_t *x_
     TRY(new_fr_array(&toeplitz_coeffs_fft, toeplitz_coeffs->length));
     TRY(fft_fr(toeplitz_coeffs_fft, toeplitz_coeffs->coeffs, false, toeplitz_coeffs->length, fs));
 
-    #pragma omp parallel
-    #pragma omp for
-    for (uint64_t i = 0; i < toeplitz_coeffs->length; i++) {
-        g1_mul(&out[i], &x_ext_fft[i], &toeplitz_coeffs_fft[i]);
+    if (run_parallel) {
+        #pragma omp parallel
+        #pragma omp for
+        for (uint64_t i = 0; i < toeplitz_coeffs->length; i++) {
+            g1_mul(&out[i], &x_ext_fft[i], &toeplitz_coeffs_fft[i]);
+        }
+    } else {
+        for (uint64_t i = 0; i < toeplitz_coeffs->length; i++) {
+            g1_mul(&out[i], &x_ext_fft[i], &toeplitz_coeffs_fft[i]);
+        }
     }
 
     free(toeplitz_coeffs_fft);
@@ -102,7 +109,7 @@ C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g1_t *x_
 C_KZG_RET toeplitz_part_3(g1_t *out, const g1_t *h_ext_fft, uint64_t n2, const FFTSettings *fs) {
     uint64_t n = n2 / 2;
 
-    TRY(fft_g1(out, h_ext_fft, true, n2, fs));
+    TRY(fft_g1(out, h_ext_fft, true, n2, fs, true));
 
     // Zero the second half of h
     for (uint64_t i = n; i < n2; i++) {
@@ -179,7 +186,7 @@ C_KZG_RET toeplitz_coeffs_step(poly *out, const poly *in) {
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-C_KZG_RET fk20_single_da_opt(g1_t *out, const poly *p, const FK20SingleSettings *fk) {
+C_KZG_RET fk20_single_da_opt(g1_t *out, const poly *p, const FK20SingleSettings *fk, bool run_parallel) {
     uint64_t n = p->length, n2 = n * 2;
     g1_t *h, *h_ext_fft;
     poly toeplitz_coeffs;
@@ -191,12 +198,12 @@ C_KZG_RET fk20_single_da_opt(g1_t *out, const poly *p, const FK20SingleSettings 
     TRY(toeplitz_coeffs_step(&toeplitz_coeffs, p));
 
     TRY(new_g1_array(&h_ext_fft, toeplitz_coeffs.length));
-    TRY(toeplitz_part_2(h_ext_fft, &toeplitz_coeffs, fk->x_ext_fft, fk->ks->fs));
+    TRY(toeplitz_part_2(h_ext_fft, &toeplitz_coeffs, fk->x_ext_fft, fk->ks->fs, run_parallel));
 
     TRY(new_g1_array(&h, n2));
     TRY(toeplitz_part_3(h, h_ext_fft, n2, fk->ks->fs));
 
-    TRY(fft_g1(out, h, false, n2, fk->ks->fs));
+    TRY(fft_g1(out, h, false, n2, fk->ks->fs, true));
 
     free_poly(&toeplitz_coeffs);
     free(h_ext_fft);
@@ -220,13 +227,13 @@ C_KZG_RET fk20_single_da_opt(g1_t *out, const poly *p, const FK20SingleSettings 
  * @retval C_CZK_BADARGS Invalid parameters were supplied
  * @retval C_CZK_ERROR   An internal error occurred
  */
-C_KZG_RET da_using_fk20_single(g1_t *out, const poly *p, const FK20SingleSettings *fk) {
+C_KZG_RET da_using_fk20_single(g1_t *out, const poly *p, const FK20SingleSettings *fk, bool run_parallel) {
     uint64_t n = p->length, n2 = n * 2;
 
     CHECK(n2 <= fk->ks->fs->max_width);
     CHECK(is_power_of_two(n));
 
-    TRY(fk20_single_da_opt(out, p, fk));
+    TRY(fk20_single_da_opt(out, p, fk, run_parallel));
     TRY(reverse_bit_order(out, sizeof out[0], n2));
 
     return C_KZG_OK;
@@ -251,7 +258,7 @@ C_KZG_RET da_using_fk20_single(g1_t *out, const poly *p, const FK20SingleSetting
  * @param[in]  p   The polynomial
  * @param[in]  fk  FK20 multi settings previously initialised by #new_fk20_multi_settings
  */
-C_KZG_RET fk20_compute_proof_multi(g1_t *out, const poly *p, const FK20MultiSettings *fk) {
+C_KZG_RET fk20_compute_proof_multi(g1_t *out, const poly *p, const FK20MultiSettings *fk, bool run_parallel) {
     uint64_t n = p->length, n2 = n * 2;
     g1_t *h_ext_fft, *h_ext_fft_file, *h;
     poly toeplitz_coeffs;
@@ -267,7 +274,7 @@ C_KZG_RET fk20_compute_proof_multi(g1_t *out, const poly *p, const FK20MultiSett
     TRY(new_g1_array(&h_ext_fft_file, toeplitz_coeffs.length));
     for (uint64_t i = 0; i < fk->chunk_len; i++) {
         TRY(toeplitz_coeffs_step(&toeplitz_coeffs, p));
-        TRY(toeplitz_part_2(h_ext_fft_file, &toeplitz_coeffs, fk->x_ext_fft_files[i], fk->ks->fs));
+        TRY(toeplitz_part_2(h_ext_fft_file, &toeplitz_coeffs, fk->x_ext_fft_files[i], fk->ks->fs, run_parallel));
         for (uint64_t j = 0; j < n2; j++) {
             g1_add_or_dbl(&h_ext_fft[j], &h_ext_fft[j], &h_ext_fft_file[j]);
         }
@@ -278,7 +285,7 @@ C_KZG_RET fk20_compute_proof_multi(g1_t *out, const poly *p, const FK20MultiSett
     TRY(new_g1_array(&h, n2));
     TRY(toeplitz_part_3(h, h_ext_fft, n2, fk->ks->fs));
 
-    TRY(fft_g1(out, h, false, n2, fk->ks->fs));
+    TRY(fft_g1(out, h, false, n2, fk->ks->fs, true));
 
     free(h_ext_fft);
     free(h);
@@ -296,7 +303,7 @@ C_KZG_RET fk20_compute_proof_multi(g1_t *out, const poly *p, const FK20MultiSett
  * @param[in]  p   The polynomial, length `n`
  * @param[in]  fk  FK20 multi settings previously initialised by #new_fk20_multi_settings
  */
-C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSettings *fk) {
+C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSettings *fk, bool run_parallel) {
     uint64_t n = p->length, n2 = n * 2, k, k2;
     g1_t *h_ext_fft, *h_ext_fft_file, *h;
     poly toeplitz_coeffs;
@@ -317,7 +324,7 @@ C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSettings *f
     TRY(new_g1_array(&h_ext_fft_file, toeplitz_coeffs.length));
     for (uint64_t i = 0; i < fk->chunk_len; i++) {
         TRY(toeplitz_coeffs_stride(&toeplitz_coeffs, p, i, fk->chunk_len));
-        TRY(toeplitz_part_2(h_ext_fft_file, &toeplitz_coeffs, fk->x_ext_fft_files[i], fk->ks->fs));
+        TRY(toeplitz_part_2(h_ext_fft_file, &toeplitz_coeffs, fk->x_ext_fft_files[i], fk->ks->fs, run_parallel));
         for (uint64_t j = 0; j < k2; j++) {
             g1_add_or_dbl(&h_ext_fft[j], &h_ext_fft[j], &h_ext_fft_file[j]);
         }
@@ -334,7 +341,7 @@ C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSettings *f
         h[i] = g1_identity;
     }
 
-    TRY(fft_g1(out, h, false, k2, fk->ks->fs));
+    TRY(fft_g1(out, h, false, k2, fk->ks->fs, true));
 
     free(h_ext_fft);
     free(h);
@@ -348,13 +355,13 @@ C_KZG_RET fk20_multi_da_opt(g1_t *out, const poly *p, const FK20MultiSettings *f
  * This involves sampling on the double domain and reordering according to reverse bit order.
  *
  */
-C_KZG_RET da_using_fk20_multi(g1_t *out, const poly *p, const FK20MultiSettings *fk) {
+C_KZG_RET da_using_fk20_multi(g1_t *out, const poly *p, const FK20MultiSettings *fk, bool run_parallel) {
     uint64_t n = p->length, n2 = n * 2;
 
     CHECK(n2 <= fk->ks->fs->max_width);
     CHECK(is_power_of_two(n));
 
-    TRY(fk20_multi_da_opt(out, p, fk));
+    TRY(fk20_multi_da_opt(out, p, fk, run_parallel));
     TRY(reverse_bit_order(out, sizeof out[0], n2 / fk->chunk_len));
 
     return C_KZG_OK;
@@ -515,7 +522,7 @@ void fk_single(void) {
     // 1. First with `da_using_fk20_single`
 
     // Generate the proofs
-    TEST_CHECK(da_using_fk20_single(all_proofs, &p, &fk) == C_KZG_OK);
+    TEST_CHECK(da_using_fk20_single(all_proofs, &p, &fk, true) == C_KZG_OK);
 
     // Verify the proof at each root of unity
     for (uint64_t i = 0; i < 2 * poly_len; i++) {
@@ -530,7 +537,7 @@ void fk_single(void) {
     // 2. Exactly the same thing again with `fk20_single_da_opt`
 
     // Generate the proofs
-    TEST_CHECK(fk20_single_da_opt(all_proofs, &p, &fk) == C_KZG_OK);
+    TEST_CHECK(fk20_single_da_opt(all_proofs, &p, &fk, false) == C_KZG_OK);
 
     // Verify the proof at each root of unity
     for (uint64_t i = 0; i < 2 * poly_len; i++) {
@@ -586,7 +593,7 @@ void fk_single_strided(void) {
     TEST_CHECK(C_KZG_OK == commit_to_poly(&commitment, &p, &ks));
 
     // Generate the proofs
-    TEST_CHECK(da_using_fk20_single(all_proofs, &p, &fk) == C_KZG_OK);
+    TEST_CHECK(da_using_fk20_single(all_proofs, &p, &fk, true) == C_KZG_OK);
 
     // Verify the proof at each root of unity
     for (uint64_t i = 0; i < 2 * poly_len; i++) {
@@ -680,7 +687,7 @@ void fk_multi_case(int chunk_len, int n) {
 
     // Compute the multi proofs, assuming that the polynomial will be extended with zeros
     TEST_CHECK(C_KZG_OK == new_g1_array(&all_proofs, 2 * chunk_count));
-    TEST_CHECK(C_KZG_OK == da_using_fk20_multi(all_proofs, &p, &fk));
+    TEST_CHECK(C_KZG_OK == da_using_fk20_multi(all_proofs, &p, &fk, true));
 
     // Now actually extend the polynomial with zeros
     TEST_CHECK(C_KZG_OK == new_fr_array(&extended_coeffs, 2 * n));
