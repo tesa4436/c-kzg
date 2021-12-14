@@ -61,9 +61,22 @@ static void das_fft_extension_stride(fr_t *ab, uint64_t n, uint64_t stride, cons
             *a_half_0 = tmp1;
         }
 
-        // Recurse
-        das_fft_extension_stride(ab_half_0s, halfhalf, stride * 2, fs);
-        das_fft_extension_stride(ab_half_1s, halfhalf, stride * 2, fs);
+        if (n > 32) {
+            #pragma omp parallel sections
+            {
+                #pragma omp section
+                {
+                    das_fft_extension_stride(ab_half_0s, halfhalf, stride * 2, fs);
+                }
+                #pragma omp section
+                {
+                    das_fft_extension_stride(ab_half_1s, halfhalf, stride * 2, fs);
+                }
+            }
+        } else {
+            das_fft_extension_stride(ab_half_0s, halfhalf, stride * 2, fs);
+            das_fft_extension_stride(ab_half_1s, halfhalf, stride * 2, fs);
+        }
 
         // The odd deduced outputs are written to the output array already, but then updated in-place
         // L1 = b[:halfHalf]
