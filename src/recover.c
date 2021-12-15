@@ -26,6 +26,10 @@
 
 /** 5 is a primitive element, but actually this can be pretty much anything not 0 or a low-degree root of unity */
 #define SCALE_FACTOR 5
+static fr_t *INVERSE_FACTORS;
+static fr_t *UNSCALE_FACTOR_POWERS;
+static int INVERSE_FACTORS_LEN = 0;
+static int UNSCALE_FACTOR_POWERS_LEN = 0;
 
 /**
  * Scale a polynomial in place.
@@ -37,14 +41,24 @@
  * @param[in] len_p Length of the polynomial coefficients
  */
 static void scale_poly(fr_t *p, uint64_t len_p) {
-    fr_t scale_factor, factor_power, inv_factor;
+    fr_t scale_factor, inv_factor;
     fr_from_uint64(&scale_factor, SCALE_FACTOR);
     fr_inv(&inv_factor, &scale_factor);
-    factor_power = fr_one;
+
+    if (INVERSE_FACTORS_LEN < len_p) {
+        if (INVERSE_FACTORS_LEN == 0) {
+            INVERSE_FACTORS = malloc(1 * sizeof(fr_t));
+            INVERSE_FACTORS[0] = fr_one;
+            INVERSE_FACTORS_LEN++;
+        }
+        for (int i = INVERSE_FACTORS_LEN; i < len_p; i++) {
+            INVERSE_FACTORS = realloc(INVERSE_FACTORS, ++INVERSE_FACTORS_LEN * sizeof(fr_t));
+            fr_mul(&INVERSE_FACTORS[INVERSE_FACTORS_LEN - 1], &INVERSE_FACTORS[i - 1], &inv_factor);
+        }
+    }
 
     for (uint64_t i = 1; i < len_p; i++) {
-        fr_mul(&factor_power, &factor_power, &inv_factor);
-        fr_mul(&p[i], &p[i], &factor_power);
+        fr_mul(&p[i], &p[i], &INVERSE_FACTORS[i]);
     }
 }
 
@@ -58,13 +72,23 @@ static void scale_poly(fr_t *p, uint64_t len_p) {
  * @param[in] len_p Length of the polynomial coefficients
  */
 static void unscale_poly(fr_t *p, uint64_t len_p) {
-    fr_t scale_factor, factor_power;
+    fr_t scale_factor;
     fr_from_uint64(&scale_factor, SCALE_FACTOR);
-    factor_power = fr_one;
+
+    if (UNSCALE_FACTOR_POWERS_LEN < len_p) {
+        if (UNSCALE_FACTOR_POWERS_LEN == 0) {
+            UNSCALE_FACTOR_POWERS = malloc(1 * sizeof(fr_t));
+            UNSCALE_FACTOR_POWERS[0] = fr_one;
+            UNSCALE_FACTOR_POWERS_LEN++;
+        }
+        for (int i = UNSCALE_FACTOR_POWERS_LEN; i < len_p; i++) {
+            UNSCALE_FACTOR_POWERS = realloc(UNSCALE_FACTOR_POWERS, ++UNSCALE_FACTOR_POWERS_LEN * sizeof(fr_t));
+            fr_mul(&UNSCALE_FACTOR_POWERS[UNSCALE_FACTOR_POWERS_LEN - 1], &UNSCALE_FACTOR_POWERS[i - 1], &scale_factor);
+        }
+    }
 
     for (uint64_t i = 1; i < len_p; i++) {
-        fr_mul(&factor_power, &factor_power, &scale_factor);
-        fr_mul(&p[i], &p[i], &factor_power);
+        fr_mul(&p[i], &p[i], &UNSCALE_FACTOR_POWERS[i]);
     }
 }
 
