@@ -72,13 +72,35 @@ void fft_fr_fast(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, 
                         uint64_t n) {
     uint64_t half = n / 2;
     if (half > 0) { // Tunable parameter
-        fft_fr_fast(out, in, stride * 2, roots, roots_stride * 2, half);
-        fft_fr_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half);
-        for (uint64_t i = 0; i < half; i++) {
-            fr_t y_times_root;
-            fr_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
-            fr_sub(&out[i + half], &out[i], &y_times_root);
-            fr_add(&out[i], &out[i], &y_times_root);
+        if (half > 256) {
+            #pragma omp parallel sections
+            {
+                #pragma omp section
+                {
+                    fft_fr_fast(out, in, stride * 2, roots, roots_stride * 2, half);
+                }
+                #pragma omp section
+                {
+                    fft_fr_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half);
+                }
+            }
+            #pragma omp parallel
+            #pragma omp for
+            for (uint64_t i = 0; i < half; i++) {
+                fr_t y_times_root;
+                fr_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
+                fr_sub(&out[i + half], &out[i], &y_times_root);
+                fr_add(&out[i], &out[i], &y_times_root);
+            }
+        } else {
+            fft_fr_fast(out, in, stride * 2, roots, roots_stride * 2, half);
+            fft_fr_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half);
+            for (uint64_t i = 0; i < half; i++) {
+                fr_t y_times_root;
+                fr_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
+                fr_sub(&out[i + half], &out[i], &y_times_root);
+                fr_add(&out[i], &out[i], &y_times_root);
+            }
         }
     } else {
         *out = *in;
