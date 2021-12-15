@@ -339,8 +339,23 @@ static C_KZG_RET poly_mul_fft(poly *out, const poly *a, const poly *b, FFTSettin
 
     TRY(new_fr_array(&a_fft, length));
     TRY(new_fr_array(&b_fft, length));
-    TRY(fft_fr(a_fft, a_pad, false, length, fs_p));
-    TRY(fft_fr(b_fft, b_pad, false, length, fs_p));
+
+    if (length >= 1024) {
+        #pragma omp parallel sections
+        {
+            #pragma omp section
+            {
+                fft_fr(a_fft, a_pad, false, length, fs_p);
+            }
+            #pragma omp section
+            {
+                fft_fr(b_fft, b_pad, false, length, fs_p);
+            }
+        }
+    } else {
+        fft_fr(a_fft, a_pad, false, length, fs_p);
+        fft_fr(b_fft, b_pad, false, length, fs_p);
+    }
 
     fr_t *ab_fft = a_pad; // reuse the a_pad array
     fr_t *ab = b_pad;     // reuse the b_pad array
