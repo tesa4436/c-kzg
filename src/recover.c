@@ -45,15 +45,18 @@ static void scale_poly(fr_t *p, uint64_t len_p) {
     fr_from_uint64(&scale_factor, SCALE_FACTOR);
     fr_inv(&inv_factor, &scale_factor);
 
-    if (INVERSE_FACTORS_LEN < len_p) {
-        if (INVERSE_FACTORS_LEN == 0) {
-            INVERSE_FACTORS = malloc(1 * sizeof(fr_t));
-            INVERSE_FACTORS[0] = fr_one;
-            INVERSE_FACTORS_LEN++;
-        }
-        for (int i = INVERSE_FACTORS_LEN; i < len_p; i++) {
-            INVERSE_FACTORS = realloc(INVERSE_FACTORS, ++INVERSE_FACTORS_LEN * sizeof(fr_t));
-            fr_mul(&INVERSE_FACTORS[INVERSE_FACTORS_LEN - 1], &INVERSE_FACTORS[i - 1], &inv_factor);
+    #pragma omp critical
+    {
+        if (INVERSE_FACTORS_LEN < len_p) {
+            if (INVERSE_FACTORS_LEN == 0) {
+                INVERSE_FACTORS = malloc(1 * sizeof(fr_t));
+                INVERSE_FACTORS[0] = fr_one;
+                INVERSE_FACTORS_LEN++;
+            }
+            for (int i = INVERSE_FACTORS_LEN; i < len_p; i++) {
+                INVERSE_FACTORS = realloc(INVERSE_FACTORS, ++INVERSE_FACTORS_LEN * sizeof(fr_t));
+                fr_mul(&INVERSE_FACTORS[INVERSE_FACTORS_LEN - 1], &INVERSE_FACTORS[i - 1], &inv_factor);
+            }
         }
     }
 
@@ -75,15 +78,18 @@ static void unscale_poly(fr_t *p, uint64_t len_p) {
     fr_t scale_factor;
     fr_from_uint64(&scale_factor, SCALE_FACTOR);
 
-    if (UNSCALE_FACTOR_POWERS_LEN < len_p) {
-        if (UNSCALE_FACTOR_POWERS_LEN == 0) {
-            UNSCALE_FACTOR_POWERS = malloc(1 * sizeof(fr_t));
-            UNSCALE_FACTOR_POWERS[0] = fr_one;
-            UNSCALE_FACTOR_POWERS_LEN++;
-        }
-        for (int i = UNSCALE_FACTOR_POWERS_LEN; i < len_p; i++) {
-            UNSCALE_FACTOR_POWERS = realloc(UNSCALE_FACTOR_POWERS, ++UNSCALE_FACTOR_POWERS_LEN * sizeof(fr_t));
-            fr_mul(&UNSCALE_FACTOR_POWERS[UNSCALE_FACTOR_POWERS_LEN - 1], &UNSCALE_FACTOR_POWERS[i - 1], &scale_factor);
+    #pragma omp critical
+    {
+        if (UNSCALE_FACTOR_POWERS_LEN < len_p) {
+            if (UNSCALE_FACTOR_POWERS_LEN == 0) {
+                UNSCALE_FACTOR_POWERS = malloc(1 * sizeof(fr_t));
+                UNSCALE_FACTOR_POWERS[0] = fr_one;
+                UNSCALE_FACTOR_POWERS_LEN++;
+            }
+            for (int i = UNSCALE_FACTOR_POWERS_LEN; i < len_p; i++) {
+                UNSCALE_FACTOR_POWERS = realloc(UNSCALE_FACTOR_POWERS, ++UNSCALE_FACTOR_POWERS_LEN * sizeof(fr_t));
+                fr_mul(&UNSCALE_FACTOR_POWERS[UNSCALE_FACTOR_POWERS_LEN - 1], &UNSCALE_FACTOR_POWERS[i - 1], &scale_factor);
+            }
         }
     }
 
@@ -160,9 +166,25 @@ C_KZG_RET recover_poly_from_samples(fr_t *reconstructed_data, fr_t *samples, uin
     // Now inverse FFT so that poly_with_zero is (E * Z_r,I)(x) = (D * Z_r,I)(x)
     TRY(fft_fr(poly_with_zero, poly_evaluations_with_zero, true, len_samples, fs));
 
+    uint64_t optim = next_power_of_two(3 * len_samples - 1);
+
     // x -> k * x
-    scale_poly(poly_with_zero, len_samples);
-    scale_poly(zero_poly.coeffs, zero_poly.length);
+    if (optim > 1024) {
+        #pragma omp parallel sections
+        {
+            #pragma omp section
+            {
+                scale_poly(poly_with_zero, len_samples);
+            }
+            #pragma omp section
+            {
+                scale_poly(zero_poly.coeffs, zero_poly.length);
+            }
+        }
+    } else {
+        scale_poly(poly_with_zero, len_samples);
+        scale_poly(zero_poly.coeffs, zero_poly.length);
+    }
 
     // Q1 = (D * Z_r,I)(k * x)
     fr_t *scaled_poly_with_zero = poly_with_zero; // Renaming
