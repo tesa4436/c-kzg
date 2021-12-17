@@ -78,7 +78,7 @@ C_KZG_RET toeplitz_part_2(g1_t *out, const poly *toeplitz_coeffs, const g1_t *x_
     // CHECK(toeplitz_coeffs->length == fk->x_ext_fft_len); // TODO: how to implement?
 
     TRY(new_fr_array(&toeplitz_coeffs_fft, toeplitz_coeffs->length));
-    TRY(fft_fr(toeplitz_coeffs_fft, toeplitz_coeffs->coeffs, false, toeplitz_coeffs->length, fs));
+    TRY(fft_fr(toeplitz_coeffs_fft, toeplitz_coeffs->coeffs, false, toeplitz_coeffs->length, fs, run_parallel));
 
     if (run_parallel) {
         #pragma omp parallel
@@ -698,7 +698,7 @@ void fk_multi_case(int chunk_len, int n) {
         extended_coeffs[i] = fr_zero;
     }
     TEST_CHECK(C_KZG_OK == new_fr_array(&extended_coeffs_fft, 2 * n));
-    TEST_CHECK(C_KZG_OK == fft_fr(extended_coeffs_fft, extended_coeffs, false, 2 * n, &fs));
+    TEST_CHECK(C_KZG_OK == fft_fr(extended_coeffs_fft, extended_coeffs, false, 2 * n, &fs, true));
     TEST_CHECK(C_KZG_OK == reverse_bit_order(extended_coeffs_fft, sizeof extended_coeffs_fft[0], 2 * n));
 
     // Verify the proofs
@@ -733,7 +733,7 @@ void fk_multi_case(int chunk_len, int n) {
         }
 
         // Verify this proof
-        TEST_CHECK(C_KZG_OK == check_proof_multi(&result, &commitment, &all_proofs[pos], &x, ys, chunk_len, &ks));
+        TEST_CHECK(C_KZG_OK == check_proof_multi(&result, &commitment, &all_proofs[pos], &x, ys, chunk_len, &ks, true));
         TEST_CHECK(true == result);
     }
 

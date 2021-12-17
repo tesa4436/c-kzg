@@ -181,7 +181,7 @@ C_KZG_RET poly_fast_div(poly *out, const poly *dividend, const poly *divisor) {
     poly q_flip;
     // We need only m - n + 1 coefficients of q_flip
     TRY(new_poly(&q_flip, m - n + 1));
-    TRY(poly_mul(&q_flip, &a_flip, &inv_b_flip));
+    TRY(poly_mul(&q_flip, &a_flip, &inv_b_flip, true));
 
     out->length = m - n + 1;
     TRY(poly_flip(out, &q_flip));
@@ -313,7 +313,7 @@ static C_KZG_RET poly_mul_direct(poly *out, const poly *a, const poly *b) {
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-static C_KZG_RET poly_mul_fft(poly *out, const poly *a, const poly *b, FFTSettings *fs_) {
+C_KZG_RET poly_mul_fft(poly *out, const poly *a, const poly *b, FFTSettings *fs_, bool run_parallel) {
 
     // Truncate a and b so as not to do excess work for the number of coefficients required.
     uint64_t a_len = min_u64(a->length, out->length);
@@ -340,21 +340,26 @@ static C_KZG_RET poly_mul_fft(poly *out, const poly *a, const poly *b, FFTSettin
     TRY(new_fr_array(&a_fft, length));
     TRY(new_fr_array(&b_fft, length));
 
-    if (length >= 1024) {
-        #pragma omp parallel sections
-        {
-            #pragma omp section
+    if (run_parallel) {
+        if (length >= 1024) {
+            #pragma omp parallel sections
             {
-                fft_fr(a_fft, a_pad, false, length, fs_p);
+                #pragma omp section
+                {
+                    fft_fr(a_fft, a_pad, false, length, fs_p, true);
+                }
+                #pragma omp section
+                {
+                    fft_fr(b_fft, b_pad, false, length, fs_p, true);
+                }
             }
-            #pragma omp section
-            {
-                fft_fr(b_fft, b_pad, false, length, fs_p);
-            }
+        } else {
+            fft_fr(a_fft, a_pad, false, length, fs_p, true);
+            fft_fr(b_fft, b_pad, false, length, fs_p, true);
         }
     } else {
-        fft_fr(a_fft, a_pad, false, length, fs_p);
-        fft_fr(b_fft, b_pad, false, length, fs_p);
+        fft_fr(a_fft, a_pad, false, length, fs_p, false);
+        fft_fr(b_fft, b_pad, false, length, fs_p, false);
     }
 
     fr_t *ab_fft = a_pad; // reuse the a_pad array
@@ -362,7 +367,7 @@ static C_KZG_RET poly_mul_fft(poly *out, const poly *a, const poly *b, FFTSettin
     for (uint64_t i = 0; i < length; i++) {
         fr_mul(&ab_fft[i], &a_fft[i], &b_fft[i]);
     }
-    TRY(fft_fr(ab, ab_fft, true, length, fs_p));
+    TRY(fft_fr(ab, ab_fft, true, length, fs_p, run_parallel));
 
     // Copy result to output
     uint64_t data_len = min_u64(out->length, length);
@@ -444,7 +449,7 @@ C_KZG_RET poly_inverse(poly *out, poly *b) {
 
         // b.c -> tmp0 (we're using out for c)
         tmp0.length = min_u64(d + 1, b->length + out->length - 1);
-        TRY(poly_mul_(&tmp0, b, out, &fs));
+        TRY(poly_mul_(&tmp0, b, out, &fs, true));
 
         // 2 - b.c -> tmp0
         for (int i = 0; i < tmp0.length; i++) {
@@ -455,7 +460,7 @@ C_KZG_RET poly_inverse(poly *out, poly *b) {
 
         // c.(2 - b.c) -> tmp1;
         tmp1.length = d + 1;
-        TRY(poly_mul_(&tmp1, out, &tmp0, &fs));
+        TRY(poly_mul_(&tmp1, out, &tmp0, &fs, true));
 
         // tmp1 -> c
         out->length = tmp1.length;
@@ -490,11 +495,11 @@ C_KZG_RET poly_inverse(poly *out, poly *b) {
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-C_KZG_RET poly_mul_(poly *out, const poly *a, const poly *b, FFTSettings *fs) {
+C_KZG_RET poly_mul_(poly *out, const poly *a, const poly *b, FFTSettings *fs, bool run_parallel) {
     if (a->length < 64 || b->length < 64 || out->length < 128) { // Tunable parameter
         return poly_mul_direct(out, a, b);
     } else {
-        return poly_mul_fft(out, a, b, fs);
+        return poly_mul_fft(out, a, b, fs, run_parallel);
     }
 }
 
@@ -512,8 +517,8 @@ C_KZG_RET poly_mul_(poly *out, const poly *a, const poly *b, FFTSettings *fs) {
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-C_KZG_RET poly_mul(poly *out, const poly *a, const poly *b) {
-    return poly_mul_(out, a, b, NULL);
+C_KZG_RET poly_mul(poly *out, const poly *a, const poly *b, bool run_parallel) {
+    return poly_mul_(out, a, b, NULL, run_parallel);
 }
 
 /**
@@ -814,7 +819,7 @@ void poly_mul_fft_test(void) {
     new_test_poly(&expected, &expected_data);
 
     new_poly(&actual0, 4);
-    TEST_CHECK(C_KZG_OK == poly_mul_fft(&actual0, &multiplicand, &multiplier, NULL));
+    TEST_CHECK(C_KZG_OK == poly_mul_fft(&actual0, &multiplicand, &multiplier, NULL, true));
     TEST_CHECK(fr_equal(&expected.coeffs[0], &actual0.coeffs[0]));
     TEST_CHECK(fr_equal(&expected.coeffs[1], &actual0.coeffs[1]));
     TEST_CHECK(fr_equal(&expected.coeffs[2], &actual0.coeffs[2]));
@@ -822,7 +827,7 @@ void poly_mul_fft_test(void) {
 
     // Check commutativity
     new_poly(&actual1, 4);
-    TEST_CHECK(C_KZG_OK == poly_mul_fft(&actual1, &multiplier, &multiplicand, NULL));
+    TEST_CHECK(C_KZG_OK == poly_mul_fft(&actual1, &multiplier, &multiplicand, NULL, true));
     TEST_CHECK(fr_equal(&expected.coeffs[0], &actual1.coeffs[0]));
     TEST_CHECK(fr_equal(&expected.coeffs[1], &actual1.coeffs[1]));
     TEST_CHECK(fr_equal(&expected.coeffs[2], &actual1.coeffs[2]));
@@ -919,7 +924,7 @@ void poly_mul_random(void) {
         TEST_CHECK(C_KZG_OK == poly_mul_direct(&q0, &multiplicand, &multiplier));
 
         new_poly(&q1, out_length);
-        TEST_CHECK(C_KZG_OK == poly_mul_fft(&q1, &multiplicand, &multiplier, NULL));
+        TEST_CHECK(C_KZG_OK == poly_mul_fft(&q1, &multiplicand, &multiplier, NULL, true));
 
         TEST_CHECK(q1.length == q0.length);
         for (int i = 0; i < q0.length; i++) {

@@ -69,32 +69,43 @@ void fft_fr_slow(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, 
  * @param[in]  n      Length of the FFT, must be a power of two
  */
 void fft_fr_fast(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride,
-                        uint64_t n) {
+                 uint64_t n, bool run_parallel) {
     uint64_t half = n / 2;
     if (half > 0) { // Tunable parameter
-        if (half > 256) {
-            #pragma omp parallel sections
-            {
-                #pragma omp section
+        if (run_parallel) {
+            if (half > 256) {
+                #pragma omp parallel sections
                 {
-                    fft_fr_fast(out, in, stride * 2, roots, roots_stride * 2, half);
+                    #pragma omp section
+                    {
+                        fft_fr_fast(out, in, stride * 2, roots, roots_stride * 2, half, true);
+                    }
+                    #pragma omp section
+                    {
+                        fft_fr_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half, true);
+                    }
                 }
-                #pragma omp section
-                {
-                    fft_fr_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half);
+                #pragma omp parallel
+                #pragma omp for
+                for (uint64_t i = 0; i < half; i++) {
+                    fr_t y_times_root;
+                    fr_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
+                    fr_sub(&out[i + half], &out[i], &y_times_root);
+                    fr_add(&out[i], &out[i], &y_times_root);
                 }
-            }
-            #pragma omp parallel
-            #pragma omp for
-            for (uint64_t i = 0; i < half; i++) {
-                fr_t y_times_root;
-                fr_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
-                fr_sub(&out[i + half], &out[i], &y_times_root);
-                fr_add(&out[i], &out[i], &y_times_root);
+            } else {
+                fft_fr_fast(out, in, stride * 2, roots, roots_stride * 2, half, true);
+                fft_fr_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half, true);
+                for (uint64_t i = 0; i < half; i++) {
+                    fr_t y_times_root;
+                    fr_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
+                    fr_sub(&out[i + half], &out[i], &y_times_root);
+                    fr_add(&out[i], &out[i], &y_times_root);
+                }
             }
         } else {
-            fft_fr_fast(out, in, stride * 2, roots, roots_stride * 2, half);
-            fft_fr_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half);
+            fft_fr_fast(out, in, stride * 2, roots, roots_stride * 2, half, false);
+            fft_fr_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half, false);
             for (uint64_t i = 0; i < half; i++) {
                 fr_t y_times_root;
                 fr_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
@@ -118,7 +129,7 @@ void fft_fr_fast(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, 
  * @retval C_CZK_OK      All is well
  * @retval C_CZK_BADARGS Invalid parameters were supplied
  */
-C_KZG_RET fft_fr(fr_t *out, const fr_t *in, bool inverse, uint64_t n, const FFTSettings *fs) {
+C_KZG_RET fft_fr(fr_t *out, const fr_t *in, bool inverse, uint64_t n, const FFTSettings *fs, bool run_parallel) {
     uint64_t stride = fs->max_width / n;
     CHECK(n <= fs->max_width);
     CHECK(is_power_of_two(n));
@@ -126,12 +137,12 @@ C_KZG_RET fft_fr(fr_t *out, const fr_t *in, bool inverse, uint64_t n, const FFTS
         fr_t inv_len;
         fr_from_uint64(&inv_len, n);
         fr_inv(&inv_len, &inv_len);
-        fft_fr_fast(out, in, 1, fs->reverse_roots_of_unity, stride, n);
+        fft_fr_fast(out, in, 1, fs->reverse_roots_of_unity, stride, n, run_parallel);
         for (uint64_t i = 0; i < n; i++) {
             fr_mul(&out[i], &out[i], &inv_len);
         }
     } else {
-        fft_fr_fast(out, in, 1, fs->expanded_roots_of_unity, stride, n);
+        fft_fr_fast(out, in, 1, fs->expanded_roots_of_unity, stride, n, run_parallel);
     }
     return C_KZG_OK;
 }
@@ -171,7 +182,7 @@ void compare_sft_fft(void) {
 
     // Do both fast and slow transforms
     fft_fr_slow(out0, data, 1, fs.expanded_roots_of_unity, 1, fs.max_width);
-    fft_fr_fast(out1, data, 1, fs.expanded_roots_of_unity, 1, fs.max_width);
+    fft_fr_fast(out1, data, 1, fs.expanded_roots_of_unity, 1, fs.max_width, true);
 
     // Verify the results are identical
     for (int i = 0; i < fs.max_width; i++) {
@@ -192,8 +203,8 @@ void roundtrip_fft(void) {
     }
 
     // Forward and reverse FFT
-    TEST_CHECK(fft_fr(coeffs, data, false, fs.max_width, &fs) == C_KZG_OK);
-    TEST_CHECK(fft_fr(data, coeffs, true, fs.max_width, &fs) == C_KZG_OK);
+    TEST_CHECK(fft_fr(coeffs, data, false, fs.max_width, &fs, true) == C_KZG_OK);
+    TEST_CHECK(fft_fr(data, coeffs, true, fs.max_width, &fs, true) == C_KZG_OK);
 
     // Verify that the result is still ascending values of i
     for (int i = 0; i < fs.max_width; i++) {
@@ -215,7 +226,7 @@ void inverse_fft(void) {
     }
 
     // Inverst FFT
-    TEST_CHECK(fft_fr(out, data, true, fs.max_width, &fs) == C_KZG_OK);
+    TEST_CHECK(fft_fr(out, data, true, fs.max_width, &fs, true) == C_KZG_OK);
 
     // Verify against the known result, `inv_fft_expected`
     int n = sizeof inv_fft_expected / sizeof inv_fft_expected[0];
@@ -240,8 +251,8 @@ void stride_fft(void) {
         fr_from_uint64(data + i, i);
     }
 
-    TEST_CHECK(fft_fr(coeffs1, data, false, width, &fs1) == C_KZG_OK);
-    TEST_CHECK(fft_fr(coeffs2, data, false, width, &fs2) == C_KZG_OK);
+    TEST_CHECK(fft_fr(coeffs1, data, false, width, &fs1, true) == C_KZG_OK);
+    TEST_CHECK(fft_fr(coeffs2, data, false, width, &fs2, true) == C_KZG_OK);
 
     for (int i = 0; i < width; i++) {
         TEST_CHECK(fr_equal(coeffs1 + i, coeffs2 + i));

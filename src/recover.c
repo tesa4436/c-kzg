@@ -40,28 +40,36 @@ static int UNSCALE_FACTOR_POWERS_LEN = 0;
  * @param[out,in] p The polynomial coefficients to be scaled
  * @param[in] len_p Length of the polynomial coefficients
  */
-static void scale_poly(fr_t *p, uint64_t len_p) {
-    fr_t scale_factor, inv_factor;
+static void scale_poly(fr_t *p, uint64_t len_p, bool run_parallel) {
+    fr_t scale_factor, factor_power, inv_factor;
     fr_from_uint64(&scale_factor, SCALE_FACTOR);
     fr_inv(&inv_factor, &scale_factor);
+    factor_power = fr_one;
 
-    #pragma omp critical
-    {
-        if (INVERSE_FACTORS_LEN < len_p) {
-            if (INVERSE_FACTORS_LEN == 0) {
-                INVERSE_FACTORS = malloc(1 * sizeof(fr_t));
-                INVERSE_FACTORS[0] = fr_one;
-                INVERSE_FACTORS_LEN++;
-            }
-            for (int i = INVERSE_FACTORS_LEN; i < len_p; i++) {
-                INVERSE_FACTORS = realloc(INVERSE_FACTORS, ++INVERSE_FACTORS_LEN * sizeof(fr_t));
-                fr_mul(&INVERSE_FACTORS[INVERSE_FACTORS_LEN - 1], &INVERSE_FACTORS[i - 1], &inv_factor);
+    if (run_parallel) {
+        #pragma omp critical
+        {
+            if (INVERSE_FACTORS_LEN < len_p) {
+                if (INVERSE_FACTORS_LEN == 0) {
+                    INVERSE_FACTORS = malloc(1 * sizeof(fr_t));
+                    INVERSE_FACTORS[0] = fr_one;
+                    INVERSE_FACTORS_LEN++;
+                }
+                for (int i = INVERSE_FACTORS_LEN; i < len_p; i++) {
+                    INVERSE_FACTORS = realloc(INVERSE_FACTORS, ++INVERSE_FACTORS_LEN * sizeof(fr_t));
+                    fr_mul(&INVERSE_FACTORS[INVERSE_FACTORS_LEN - 1], &INVERSE_FACTORS[i - 1], &inv_factor);
+                }
             }
         }
     }
 
     for (uint64_t i = 1; i < len_p; i++) {
-        fr_mul(&p[i], &p[i], &INVERSE_FACTORS[i]);
+        if (run_parallel) {
+            fr_mul(&p[i], &p[i], &INVERSE_FACTORS[i]);
+        } else {
+            fr_mul(&factor_power, &factor_power, &inv_factor);
+            fr_mul(&p[i], &p[i], &factor_power);
+        }
     }
 }
 
@@ -74,27 +82,35 @@ static void scale_poly(fr_t *p, uint64_t len_p) {
  * @param[out,in] p The polynomial coefficients to be unscaled
  * @param[in] len_p Length of the polynomial coefficients
  */
-static void unscale_poly(fr_t *p, uint64_t len_p) {
-    fr_t scale_factor;
+static void unscale_poly(fr_t *p, uint64_t len_p, bool run_parallel) {
+    fr_t scale_factor, factor_power;
     fr_from_uint64(&scale_factor, SCALE_FACTOR);
+    factor_power = fr_one;
 
-    #pragma omp critical
-    {
-        if (UNSCALE_FACTOR_POWERS_LEN < len_p) {
-            if (UNSCALE_FACTOR_POWERS_LEN == 0) {
-                UNSCALE_FACTOR_POWERS = malloc(1 * sizeof(fr_t));
-                UNSCALE_FACTOR_POWERS[0] = fr_one;
-                UNSCALE_FACTOR_POWERS_LEN++;
-            }
-            for (int i = UNSCALE_FACTOR_POWERS_LEN; i < len_p; i++) {
-                UNSCALE_FACTOR_POWERS = realloc(UNSCALE_FACTOR_POWERS, ++UNSCALE_FACTOR_POWERS_LEN * sizeof(fr_t));
-                fr_mul(&UNSCALE_FACTOR_POWERS[UNSCALE_FACTOR_POWERS_LEN - 1], &UNSCALE_FACTOR_POWERS[i - 1], &scale_factor);
+    if (run_parallel) {
+        #pragma omp critical
+        {
+            if (UNSCALE_FACTOR_POWERS_LEN < len_p) {
+                if (UNSCALE_FACTOR_POWERS_LEN == 0) {
+                    UNSCALE_FACTOR_POWERS = malloc(1 * sizeof(fr_t));
+                    UNSCALE_FACTOR_POWERS[0] = fr_one;
+                    UNSCALE_FACTOR_POWERS_LEN++;
+                }
+                for (int i = UNSCALE_FACTOR_POWERS_LEN; i < len_p; i++) {
+                    UNSCALE_FACTOR_POWERS = realloc(UNSCALE_FACTOR_POWERS, ++UNSCALE_FACTOR_POWERS_LEN * sizeof(fr_t));
+                    fr_mul(&UNSCALE_FACTOR_POWERS[UNSCALE_FACTOR_POWERS_LEN - 1], &UNSCALE_FACTOR_POWERS[i - 1], &scale_factor);
+                }
             }
         }
     }
 
     for (uint64_t i = 1; i < len_p; i++) {
-        fr_mul(&p[i], &p[i], &UNSCALE_FACTOR_POWERS[i]);
+        if (run_parallel) {
+            fr_mul(&p[i], &p[i], &UNSCALE_FACTOR_POWERS[i]);
+        } else {
+            fr_mul(&factor_power, &factor_power, &scale_factor);
+            fr_mul(&p[i], &p[i], &factor_power);
+        }
     }
 }
 
@@ -114,7 +130,8 @@ static void unscale_poly(fr_t *p, uint64_t len_p) {
  * @retval C_CZK_ERROR   An internal error occurred
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
-C_KZG_RET recover_poly_from_samples(fr_t *reconstructed_data, fr_t *samples, uint64_t len_samples, FFTSettings *fs) {
+C_KZG_RET recover_poly_from_samples(fr_t *reconstructed_data, fr_t *samples, uint64_t len_samples, FFTSettings *fs,
+                                    bool run_parallel) {
 
     CHECK(is_power_of_two(len_samples));
 
@@ -148,7 +165,7 @@ C_KZG_RET recover_poly_from_samples(fr_t *reconstructed_data, fr_t *samples, uin
     zero_poly.coeffs = scratch1;
 
     // Calculate `Z_r,I`
-    TRY(zero_polynomial_via_multiplication(zero_eval, &zero_poly, len_samples, missing, len_missing, fs));
+    TRY(zero_polynomial_via_multiplication(zero_eval, &zero_poly, len_samples, missing, len_missing, fs, run_parallel));
 
     // Check all is well
     for (uint64_t i = 0; i < len_samples; i++) {
@@ -164,26 +181,31 @@ C_KZG_RET recover_poly_from_samples(fr_t *reconstructed_data, fr_t *samples, uin
         }
     }
     // Now inverse FFT so that poly_with_zero is (E * Z_r,I)(x) = (D * Z_r,I)(x)
-    TRY(fft_fr(poly_with_zero, poly_evaluations_with_zero, true, len_samples, fs));
+    TRY(fft_fr(poly_with_zero, poly_evaluations_with_zero, true, len_samples, fs, run_parallel));
 
     uint64_t optim = next_power_of_two(3 * len_samples - 1);
 
     // x -> k * x
-    if (optim > 1024) {
-        #pragma omp parallel sections
-        {
-            #pragma omp section
+    if (run_parallel) {
+        if (optim > 1024) {
+            #pragma omp parallel sections
             {
-                scale_poly(poly_with_zero, len_samples);
+                #pragma omp section
+                {
+                    scale_poly(poly_with_zero, len_samples, true);
+                }
+                #pragma omp section
+                {
+                    scale_poly(zero_poly.coeffs, zero_poly.length, true);
+                }
             }
-            #pragma omp section
-            {
-                scale_poly(zero_poly.coeffs, zero_poly.length);
-            }
+        } else {
+            scale_poly(poly_with_zero, len_samples, true);
+            scale_poly(zero_poly.coeffs, zero_poly.length, true);
         }
     } else {
-        scale_poly(poly_with_zero, len_samples);
-        scale_poly(zero_poly.coeffs, zero_poly.length);
+        scale_poly(poly_with_zero, len_samples, false);
+        scale_poly(zero_poly.coeffs, zero_poly.length, false);
     }
 
     // Q1 = (D * Z_r,I)(k * x)
@@ -192,8 +214,8 @@ C_KZG_RET recover_poly_from_samples(fr_t *reconstructed_data, fr_t *samples, uin
     fr_t *scaled_zero_poly = zero_poly.coeffs; // Renaming
 
     // Polynomial division by convolution: Q3 = Q1 / Q2
-    TRY(fft_fr(eval_scaled_poly_with_zero, scaled_poly_with_zero, false, len_samples, fs));
-    TRY(fft_fr(eval_scaled_zero_poly, scaled_zero_poly, false, len_samples, fs));
+    TRY(fft_fr(eval_scaled_poly_with_zero, scaled_poly_with_zero, false, len_samples, fs, run_parallel));
+    TRY(fft_fr(eval_scaled_zero_poly, scaled_zero_poly, false, len_samples, fs, run_parallel));
 
     fr_t *eval_scaled_reconstructed_poly = eval_scaled_poly_with_zero;
     for (uint64_t i = 0; i < len_samples; i++) {
@@ -201,16 +223,16 @@ C_KZG_RET recover_poly_from_samples(fr_t *reconstructed_data, fr_t *samples, uin
     }
 
     // The result of the division is D(k * x):
-    TRY(fft_fr(scaled_reconstructed_poly, eval_scaled_reconstructed_poly, true, len_samples, fs));
+    TRY(fft_fr(scaled_reconstructed_poly, eval_scaled_reconstructed_poly, true, len_samples, fs, run_parallel));
 
     // k * x -> x
-    unscale_poly(scaled_reconstructed_poly, len_samples);
+    unscale_poly(scaled_reconstructed_poly, len_samples, run_parallel);
 
     // Finally we have D(x) which evaluates to our original data at the powers of roots of unity
     fr_t *reconstructed_poly = scaled_reconstructed_poly; // Renaming
 
     // The evaluation polynomial for D(x) is the reconstructed data:
-    TRY(fft_fr(reconstructed_data, reconstructed_poly, false, len_samples, fs));
+    TRY(fft_fr(reconstructed_data, reconstructed_poly, false, len_samples, fs, run_parallel));
 
     // Check all is well
     for (uint64_t i = 0; i < len_samples; i++) {
@@ -260,7 +282,7 @@ void recover_simple(void) {
     }
 
     fr_t data[fs.max_width];
-    TEST_CHECK(C_KZG_OK == fft_fr(data, poly, false, fs.max_width, &fs));
+    TEST_CHECK(C_KZG_OK == fft_fr(data, poly, false, fs.max_width, &fs, true));
 
     fr_t sample[fs.max_width];
     sample[0] = data[0];
@@ -269,7 +291,7 @@ void recover_simple(void) {
     sample[3] = data[3];
 
     fr_t recovered[fs.max_width];
-    TEST_CHECK(C_KZG_OK == recover_poly_from_samples(recovered, sample, fs.max_width, &fs));
+    TEST_CHECK(C_KZG_OK == recover_poly_from_samples(recovered, sample, fs.max_width, &fs, true));
 
     // Check recovered data
     for (int i = 0; i < fs.max_width; i++) {
@@ -278,7 +300,7 @@ void recover_simple(void) {
 
     // Also check against original coefficients
     fr_t back[fs.max_width];
-    TEST_CHECK(C_KZG_OK == fft_fr(back, recovered, true, fs.max_width, &fs));
+    TEST_CHECK(C_KZG_OK == fft_fr(back, recovered, true, fs.max_width, &fs, true));
     for (int i = 0; i < fs.max_width / 2; i++) {
         TEST_CHECK(fr_equal(&poly[i], &back[i]));
     }
@@ -307,7 +329,7 @@ void recover_random(void) {
         poly[i] = fr_zero;
     }
 
-    TEST_CHECK(C_KZG_OK == fft_fr(data, poly, false, fs.max_width, &fs));
+    TEST_CHECK(C_KZG_OK == fft_fr(data, poly, false, fs.max_width, &fs, true));
 
     // Having half of the data is the minimum
     for (float known_ratio = 0.5; known_ratio < 1.0; known_ratio += 0.05) {
@@ -315,14 +337,14 @@ void recover_random(void) {
         for (int i = 0; i < 4; i++) {
             random_missing(samples, data, fs.max_width, known);
 
-            TEST_CHECK(C_KZG_OK == recover_poly_from_samples(recovered, samples, fs.max_width, &fs));
+            TEST_CHECK(C_KZG_OK == recover_poly_from_samples(recovered, samples, fs.max_width, &fs, true));
             for (int i = 0; i < fs.max_width; i++) {
                 TEST_CHECK(fr_equal(&data[i], &recovered[i]));
             }
 
             // Also check against original coefficients
             fr_t back[fs.max_width];
-            TEST_CHECK(C_KZG_OK == fft_fr(back, recovered, true, fs.max_width, &fs));
+            TEST_CHECK(C_KZG_OK == fft_fr(back, recovered, true, fs.max_width, &fs, true));
             for (int i = 0; i < fs.max_width / 2; i++) {
                 TEST_CHECK(fr_equal(&poly[i], &back[i]));
             }

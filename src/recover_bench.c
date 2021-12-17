@@ -40,7 +40,7 @@ long run_bench(int scale, int max_seconds) {
     }
 
     fr_t *data = malloc(fs.max_width * sizeof(fr_t));
-    assert(C_KZG_OK == fft_fr(data, poly, false, fs.max_width, &fs));
+    assert(C_KZG_OK == fft_fr(data, poly, false, fs.max_width, &fs, true));
 
     fr_t *samples = malloc(fs.max_width * sizeof(fr_t));
     for (int i = 0; i < fs.max_width; i++) {
@@ -57,7 +57,7 @@ long run_bench(int scale, int max_seconds) {
     fr_t *recovered = malloc(fs.max_width * sizeof(fr_t));
     while (total_time < max_seconds * NANO) {
         clock_gettime(CLOCK_REALTIME, &t0);
-        assert(C_KZG_OK == recover_poly_from_samples(recovered, samples, fs.max_width, &fs));
+        /*assert(C_KZG_OK == */recover_poly_from_samples(recovered, samples, fs.max_width, &fs, true);//);
         clock_gettime(CLOCK_REALTIME, &t1);
 
         // Verify the result is correct

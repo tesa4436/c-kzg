@@ -108,7 +108,7 @@ C_KZG_RET pad_p(fr_t *out, uint64_t out_len, const poly *p) {
  * @retval C_CZK_ERROR   An internal error occurred
  */
 C_KZG_RET reduce_partials(poly *out, uint64_t len_out, fr_t *scratch, uint64_t len_scratch, const poly *partials,
-                                 uint64_t partial_count, const FFTSettings *fs) {
+                                 uint64_t partial_count, const FFTSettings *fs, bool run_parallel) {
     CHECK(is_power_of_two(len_out));
     CHECK(len_scratch >= 3 * len_out);
     CHECK(partial_count > 0);
@@ -126,17 +126,17 @@ C_KZG_RET reduce_partials(poly *out, uint64_t len_out, fr_t *scratch, uint64_t l
 
     // Do the last partial first: it is no longer than the others and the padding can remain in place for the rest.
     TRY(pad_p(p_padded, len_out, &partials[partial_count - 1]));
-    TRY(fft_fr(mul_eval_ps, p_padded, false, len_out, fs));
+    TRY(fft_fr(mul_eval_ps, p_padded, false, len_out, fs, run_parallel));
 
     for (uint64_t i = 0; i < partial_count - 1; i++) {
         TRY(pad_p(p_padded, partials[i].length, &partials[i]));
-        TRY(fft_fr(p_eval, p_padded, false, len_out, fs));
+        TRY(fft_fr(p_eval, p_padded, false, len_out, fs, run_parallel));
         for (uint64_t j = 0; j < len_out; j++) {
             fr_mul(&mul_eval_ps[j], &mul_eval_ps[j], &p_eval[j]);
         }
     }
 
-    TRY(fft_fr(out->coeffs, mul_eval_ps, true, len_out, fs));
+    TRY(fft_fr(out->coeffs, mul_eval_ps, true, len_out, fs, run_parallel));
     out->length = out_degree + 1;
 
     return C_KZG_OK;
@@ -171,7 +171,7 @@ C_KZG_RET reduce_partials(poly *out, uint64_t len_out, fr_t *scratch, uint64_t l
  */
 C_KZG_RET zero_polynomial_via_multiplication(fr_t *zero_eval, poly *zero_poly, uint64_t length,
                                              const uint64_t *missing_indices, uint64_t len_missing,
-                                             const FFTSettings *fs) {
+                                             const FFTSettings *fs, bool run_parallel) {
     if (len_missing == 0) {
         zero_poly->length = 0;
         for (uint64_t i = 0; i < length; i++) {
@@ -193,7 +193,7 @@ C_KZG_RET zero_polynomial_via_multiplication(fr_t *zero_eval, poly *zero_poly, u
     if (len_missing <= missing_per_partial) {
 
         TRY(do_zero_poly_mul_partial(zero_poly, missing_indices, len_missing, domain_stride, fs));
-        TRY(fft_fr(zero_eval, zero_poly->coeffs, false, length, fs));
+        TRY(fft_fr(zero_eval, zero_poly->coeffs, false, length, fs, run_parallel));
 
     } else {
 
@@ -233,7 +233,7 @@ C_KZG_RET zero_polynomial_via_multiplication(fr_t *zero_eval, poly *zero_poly, u
                 uint64_t partials_num = min_u64(reduction_factor, partial_count - start);
                 partials[i].coeffs = work + start * partial_size;
                 if (partials_num > 1) {
-                    TRY(reduce_partials(&partials[i], reduced_len, scratch, n * 3, &partials[start], partials_num, fs));
+                    TRY(reduce_partials(&partials[i], reduced_len, scratch, n * 3, &partials[start], partials_num, fs, run_parallel));
                 } else {
                     partials[i].length = partials[start].length;
                 }
@@ -243,7 +243,7 @@ C_KZG_RET zero_polynomial_via_multiplication(fr_t *zero_eval, poly *zero_poly, u
 
         // Process final output
         TRY(pad_p(zero_poly->coeffs, length, &partials[0]));
-        TRY(fft_fr(zero_eval, zero_poly->coeffs, false, length, fs));
+        TRY(fft_fr(zero_eval, zero_poly->coeffs, false, length, fs, run_parallel));
 
         zero_poly->length = partials[0].length;
 
@@ -321,7 +321,7 @@ void test_reduce_partials(void) {
     for (int i = 0; i < 4; i++) {
         TEST_CHECK(C_KZG_OK == do_zero_poly_mul_partial(&partials[i], partial_indices[i], 2, 1, &fs));
     }
-    TEST_CHECK(C_KZG_OK == reduce_partials(&from_tree_reduction, 16, scratch, 48, partials, 4, &fs));
+    TEST_CHECK(C_KZG_OK == reduce_partials(&from_tree_reduction, 16, scratch, 48, partials, 4, &fs, true));
 
     // Direct
     uint64_t indices[] = {1, 3, 7, 8, 9, 10, 12, 13};
@@ -377,7 +377,7 @@ void reduce_partials_random(void) {
             fr_t *scratch;
             TEST_CHECK(C_KZG_OK == new_fr_array(&scratch, point_count * 3));
             TEST_CHECK(C_KZG_OK == reduce_partials(&from_tree_reduction, point_count, scratch, point_count * 3,
-                                                   partials, partial_count, &fs));
+                                                   partials, partial_count, &fs, true));
 
             // From direct
             poly from_direct;
@@ -434,7 +434,7 @@ void check_test_data(void) {
     }
 
     // The eval poly is the FFT of the zero poly
-    TEST_CHECK(C_KZG_OK == fft_fr(tmp_poly.coeffs, expected_eval.coeffs, true, tmp_poly.length, &fs));
+    TEST_CHECK(C_KZG_OK == fft_fr(tmp_poly.coeffs, expected_eval.coeffs, true, tmp_poly.length, &fs, true));
     for (int i = 0; i < 16; i++) {
         TEST_CHECK(fr_equal(&tmp_poly.coeffs[i], &expected_poly.coeffs[i]));
         TEST_MSG("Failed for i = %d", i);
@@ -466,7 +466,7 @@ void zero_poly_known(void) {
     }
 
     TEST_CHECK(C_KZG_OK == zero_polynomial_via_multiplication(zero_eval.coeffs, &zero_poly, zero_eval.length, missing,
-                                                              len_missing, &fs));
+                                                              len_missing, &fs, true));
 
     TEST_CHECK(len_missing + 1 == zero_poly.length);
     TEST_MSG("Expected %lu, got %lu", len_missing + 1, zero_poly.length);
@@ -511,7 +511,7 @@ void zero_poly_random(void) {
             TEST_CHECK(C_KZG_OK == new_fr_array(&zero_eval, fs.max_width));
             TEST_CHECK(C_KZG_OK == new_poly(&zero_poly, fs.max_width));
             TEST_CHECK(C_KZG_OK == zero_polynomial_via_multiplication(zero_eval, &zero_poly, fs.max_width, missing,
-                                                                      len_missing, &fs));
+                                                                      len_missing, &fs, true));
 
             TEST_CHECK(len_missing + 1 == zero_poly.length);
             TEST_MSG("ZeroPolyLen: expected %d, got %lu", len_missing + 1, zero_poly.length);
@@ -526,7 +526,7 @@ void zero_poly_random(void) {
 
             fr_t *zero_eval_fft;
             TEST_CHECK(C_KZG_OK == new_fr_array(&zero_eval_fft, fs.max_width));
-            TEST_CHECK(C_KZG_OK == fft_fr(zero_eval_fft, zero_eval, true, fs.max_width, &fs));
+            TEST_CHECK(C_KZG_OK == fft_fr(zero_eval_fft, zero_eval, true, fs.max_width, &fs, true));
             for (uint64_t i = 0; i < zero_poly.length; i++) {
                 TEST_CHECK(fr_equal(&zero_poly.coeffs[i], &zero_eval_fft[i]));
             }
@@ -562,7 +562,7 @@ void zero_poly_all_but_one(void) {
     TEST_CHECK(C_KZG_OK == new_fr_array(&zero_eval, fs.max_width));
     TEST_CHECK(C_KZG_OK == new_poly(&zero_poly, fs.max_width));
     TEST_CHECK(C_KZG_OK ==
-               zero_polynomial_via_multiplication(zero_eval, &zero_poly, fs.max_width, missing, len_missing, &fs));
+               zero_polynomial_via_multiplication(zero_eval, &zero_poly, fs.max_width, missing, len_missing, &fs, true));
 
     TEST_CHECK(len_missing + 1 == zero_poly.length);
     TEST_MSG("ZeroPolyLen: expected %d, got %lu", len_missing + 1, zero_poly.length);
@@ -577,7 +577,7 @@ void zero_poly_all_but_one(void) {
 
     fr_t *zero_eval_fft;
     TEST_CHECK(C_KZG_OK == new_fr_array(&zero_eval_fft, fs.max_width));
-    TEST_CHECK(C_KZG_OK == fft_fr(zero_eval_fft, zero_eval, true, fs.max_width, &fs));
+    TEST_CHECK(C_KZG_OK == fft_fr(zero_eval_fft, zero_eval, true, fs.max_width, &fs, true));
     for (uint64_t i = 0; i < zero_poly.length; i++) {
         TEST_CHECK(fr_equal(&zero_poly.coeffs[i], &zero_eval_fft[i]));
     }
@@ -610,7 +610,7 @@ void zero_poly_252(void) {
     TEST_CHECK(C_KZG_OK == new_fr_array(&zero_eval, fs.max_width));
     TEST_CHECK(C_KZG_OK == new_poly(&zero_poly, fs.max_width));
     TEST_CHECK(C_KZG_OK ==
-               zero_polynomial_via_multiplication(zero_eval, &zero_poly, fs.max_width, missing, len_missing, &fs));
+               zero_polynomial_via_multiplication(zero_eval, &zero_poly, fs.max_width, missing, len_missing, &fs, true));
 
     TEST_CHECK(len_missing + 1 == zero_poly.length);
     TEST_MSG("ZeroPolyLen: expected %d, got %lu", len_missing + 1, zero_poly.length);
@@ -625,7 +625,7 @@ void zero_poly_252(void) {
 
     fr_t *zero_eval_fft;
     TEST_CHECK(C_KZG_OK == new_fr_array(&zero_eval_fft, fs.max_width));
-    TEST_CHECK(C_KZG_OK == fft_fr(zero_eval_fft, zero_eval, true, fs.max_width, &fs));
+    TEST_CHECK(C_KZG_OK == fft_fr(zero_eval_fft, zero_eval, true, fs.max_width, &fs, true));
     for (uint64_t i = 0; i < zero_poly.length; i++) {
         TEST_CHECK(fr_equal(&zero_poly.coeffs[i], &zero_eval_fft[i]));
     }
