@@ -64,7 +64,7 @@ void free_fft_settings(FFTSettings *s);
 // fft_fr.c
 //
 
-C_KZG_RET fft_fr(fr_t *out, const fr_t *in, bool inverse, uint64_t n, const FFTSettings *fs);
+C_KZG_RET fft_fr(fr_t *out, const fr_t *in, bool inverse, uint64_t n, const FFTSettings *fs, bool run_parallel);
 
 //
 // fft_g1.c
@@ -88,8 +88,8 @@ typedef struct {
 
 void eval_poly(fr_t *out, const poly *p, const fr_t *x);
 C_KZG_RET poly_inverse(poly *out, poly *b);
-C_KZG_RET poly_mul(poly *out, const poly *a, const poly *b);
-C_KZG_RET poly_mul_(poly *out, const poly *a, const poly *b, FFTSettings *fs);
+C_KZG_RET poly_mul(poly *out, const poly *a, const poly *b, bool run_parallel);
+C_KZG_RET poly_mul_(poly *out, const poly *a, const poly *b, FFTSettings *fs, bool run_parallel);
 C_KZG_RET new_poly_div(poly *out, const poly *dividend, const poly *divisor);
 C_KZG_RET new_poly(poly *out, uint64_t length);
 C_KZG_RET new_poly_with_coeffs(poly *out, const fr_t *coeffs, uint64_t length);
@@ -117,7 +117,7 @@ C_KZG_RET check_proof_single(bool *out, const g1_t *commitment, const g1_t *proo
                              const KZGSettings *ks);
 C_KZG_RET compute_proof_multi(g1_t *out, const poly *p, const fr_t *x0, uint64_t n, const KZGSettings *ks);
 C_KZG_RET check_proof_multi(bool *out, const g1_t *commitment, const g1_t *proof, const fr_t *x, const fr_t *ys,
-                            uint64_t n, const KZGSettings *ks);
+                            uint64_t n, const KZGSettings *ks, bool run_parallel);
 C_KZG_RET new_kzg_settings(KZGSettings *ks, const g1_t *secret_g1, const g2_t *secret_g2, uint64_t length,
                            const FFTSettings *fs);
 void free_kzg_settings(KZGSettings *ks);
@@ -158,7 +158,7 @@ void free_fk20_multi_settings(FK20MultiSettings *fk);
 // recover.c
 //
 
-C_KZG_RET recover_poly_from_samples(fr_t *reconstructed_data, fr_t *samples, uint64_t len_samples, FFTSettings *fs);
+C_KZG_RET recover_poly_from_samples(fr_t *reconstructed_data, fr_t *samples, uint64_t len_samples, FFTSettings *fs, bool run_parallel);
 
 //
 // zero_poly.c
@@ -166,17 +166,17 @@ C_KZG_RET recover_poly_from_samples(fr_t *reconstructed_data, fr_t *samples, uin
 
 C_KZG_RET zero_polynomial_via_multiplication(fr_t *zero_eval, poly *zero_poly, uint64_t width,
                                              const uint64_t *missing_indices, uint64_t len_missing,
-                                             const FFTSettings *fs);
+                                             const FFTSettings *fs, bool run_parallel);
 
 //
 // das_extension.c
 //
 
-C_KZG_RET das_fft_extension(fr_t *vals, uint64_t n, const FFTSettings *fs);
+C_KZG_RET das_fft_extension(fr_t *vals, uint64_t n, const FFTSettings *fs, bool run_parallel);
 
 void fft_fr_slow(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride, uint64_t n);
 
-void fft_fr_fast(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride, uint64_t n);
+void fft_fr_fast(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride, uint64_t n, bool run_parallel);
 
 void fft_g1_fast(g1_t *out, const g1_t *in, uint64_t stride, const fr_t *roots, uint64_t roots_stride, uint64_t n, bool run_parallel);
 
@@ -205,7 +205,9 @@ void fk_multi_chunk_len_1_512();
 void fk_multi_chunk_len_16_16();
 C_KZG_RET do_zero_poly_mul_partial(poly *dst, const uint64_t *indices, uint64_t len_indices, uint64_t stride, const FFTSettings *fs);
 C_KZG_RET pad_p(fr_t *out, uint64_t out_len, const poly *p);
-C_KZG_RET reduce_partials(poly *out, uint64_t len_out, fr_t *scratch, uint64_t len_scratch, const poly *partials, uint64_t partial_count, const FFTSettings *fs);
+C_KZG_RET reduce_partials(poly *out, uint64_t len_out, fr_t *scratch, uint64_t len_scratch, const poly *partials, uint64_t partial_count, const FFTSettings *fs, bool run_parallel);
 C_KZG_RET reverse_bit_order(void *values, size_t size, uint64_t n);
+
+C_KZG_RET poly_mul_fft(poly *out, const poly *a, const poly *b, FFTSettings *fs_, bool run_parallel);
 
 #endif // C_KZG_H

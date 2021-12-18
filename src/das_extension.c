@@ -32,7 +32,7 @@
  * @param[in]      stride The step length through the roots of unity
  * @param[in]      fs     The FFT settings previously initialised with #new_fft_settings
  */
-static void das_fft_extension_stride(fr_t *ab, uint64_t n, uint64_t stride, const FFTSettings *fs) {
+static void das_fft_extension_stride(fr_t *ab, uint64_t n, uint64_t stride, const FFTSettings *fs, bool run_parallel) {
 
     if (n < 2) return;
 
@@ -61,9 +61,27 @@ static void das_fft_extension_stride(fr_t *ab, uint64_t n, uint64_t stride, cons
             *a_half_0 = tmp1;
         }
 
-        // Recurse
-        das_fft_extension_stride(ab_half_0s, halfhalf, stride * 2, fs);
-        das_fft_extension_stride(ab_half_1s, halfhalf, stride * 2, fs);
+        if (run_parallel) {
+            if (n > 32) {
+                #pragma omp parallel sections
+                {
+                    #pragma omp section
+                    {
+                        das_fft_extension_stride(ab_half_0s, halfhalf, stride * 2, fs, true);
+                    }
+                    #pragma omp section
+                    {
+                        das_fft_extension_stride(ab_half_1s, halfhalf, stride * 2, fs, true);
+                    }
+                }
+            } else {
+                das_fft_extension_stride(ab_half_0s, halfhalf, stride * 2, fs, false);
+                das_fft_extension_stride(ab_half_1s, halfhalf, stride * 2, fs, false);
+            }
+        } else {
+            das_fft_extension_stride(ab_half_0s, halfhalf, stride * 2, fs, false);
+            das_fft_extension_stride(ab_half_1s, halfhalf, stride * 2, fs, false);
+        }
 
         // The odd deduced outputs are written to the output array already, but then updated in-place
         // L1 = b[:halfHalf]
@@ -95,14 +113,14 @@ static void das_fft_extension_stride(fr_t *ab, uint64_t n, uint64_t stride, cons
  * @retval C_CZK_OK      All is well
  * @retval C_CZK_BADARGS Invalid parameters were supplied
  */
-C_KZG_RET das_fft_extension(fr_t *vals, uint64_t n, const FFTSettings *fs) {
+C_KZG_RET das_fft_extension(fr_t *vals, uint64_t n, const FFTSettings *fs, bool run_parallel) {
     fr_t invlen;
 
     CHECK(n > 0);
     CHECK(is_power_of_two(n));
     CHECK(n * 2 <= fs->max_width);
 
-    das_fft_extension_stride(vals, n, fs->max_width / (n * 2), fs);
+    das_fft_extension_stride(vals, n, fs->max_width / (n * 2), fs, run_parallel);
 
     fr_from_uint64(&invlen, n);
     fr_inv(&invlen, &invlen);
@@ -142,7 +160,7 @@ void das_extension_test_known(void) {
         fr_from_uint64(data + i, i);
     }
 
-    TEST_CHECK(C_KZG_OK == das_fft_extension(data, half, &fs));
+    TEST_CHECK(C_KZG_OK == das_fft_extension(data, half, &fs, true));
 
     // Check against the expected values
     for (uint64_t i = 0; i < 8; i++) {
@@ -178,14 +196,14 @@ void das_extension_test_random(void) {
             }
 
             // Extend the even data to create the odd data required to make the second half of the FFT zero
-            TEST_CHECK(C_KZG_OK == das_fft_extension(odd_data, width / 2, &fs));
+            TEST_CHECK(C_KZG_OK == das_fft_extension(odd_data, width / 2, &fs, true));
 
             // Reconstruct the full data
             for (int i = 0; i < width; i += 2) {
                 data[i] = even_data[i / 2];
                 data[i + 1] = odd_data[i / 2];
             }
-            TEST_CHECK(C_KZG_OK == fft_fr(coeffs, data, true, width, &fs));
+            TEST_CHECK(C_KZG_OK == fft_fr(coeffs, data, true, width, &fs, true));
 
             // Second half of the coefficients should be all zeros
             for (int i = width / 2; i < width; i++) {

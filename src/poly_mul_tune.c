@@ -54,11 +54,11 @@ long run_bench(int scale_0, int scale_1, int max_seconds) {
     while (total_time < max_seconds * NANO) {
         clock_gettime(CLOCK_REALTIME, &t0);
 
-#if 0
-        assert(C_KZG_OK == poly_mul_fft(&r, &multiplicand, &multiplier, NULL));
-#else
-        assert(C_KZG_OK == poly_mul(&r, &multiplicand, &multiplier));
-#endif
+//#if 0
+        assert(C_KZG_OK == poly_mul_fft(&r, &multiplicand, &multiplier, NULL, true));
+//#else
+//        assert(C_KZG_OK == poly_mul(&r, &multiplicand, &multiplier));
+//#endif
 
         clock_gettime(CLOCK_REALTIME, &t1);
         nits++;
@@ -94,23 +94,23 @@ int main(int argc, char *argv[]) {
     int scale_min = 5;
     int scale_max = 12;
 
-#if 1
+//#if 1
     printf("*** Benchmarking poly_mul_fft() %d second%s per test.\n", nsec, nsec == 1 ? "" : "s");
-#else
-    printf("*** Benchmarking poly_mul_direct() %d second%s per test.\n", nsec, nsec == 1 ? "" : "s");
-#endif
-    printf(",");
+//#else
+//    printf("*** Benchmarking poly_mul_direct() %d second%s per test.\n", nsec, nsec == 1 ? "" : "s");
+//#endif
+    /*printf(",");
     for (int i = scale_min; i <= scale_max; i++) {
         printf("%d,", i);
-    }
-    printf("\n");
+    }*/
+    //printf("\n");
     for (int scale_0 = scale_min; scale_0 <= scale_max; scale_0++) {
-        printf("%d,", scale_0);
         for (int scale_1 = scale_min; scale_1 <= scale_max; scale_1++) {
-            printf("%lu,", run_bench(scale_0, scale_1, nsec));
+            printf("fft_fr/scale_%d_%d %ld ns/op\n", scale_0, scale_1, run_bench(scale_0, scale_1, nsec));
         }
-        printf("\n");
     }
+        /*printf("\n");
+    }*/
 
     return EXIT_SUCCESS;
 }

@@ -46,7 +46,7 @@ long run_bench(int scale, int max_seconds) {
         clock_gettime(CLOCK_REALTIME, &t0);
         // Half missing leaves enough FFT computation space
         assert(C_KZG_OK == zero_polynomial_via_multiplication(zero_eval, &zero_poly_p, fs.max_width, missing,
-                                                              fs.max_width / 2, &fs));
+                                                              fs.max_width / 2, &fs, true));
         clock_gettime(CLOCK_REALTIME, &t1);
         nits++;
         total_time += tdiff(t0, t1);

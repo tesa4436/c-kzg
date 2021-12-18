@@ -152,7 +152,7 @@ C_KZG_RET compute_proof_multi(g1_t *out, const poly *p, const fr_t *x0, uint64_t
  * @retval C_CZK_MALLOC  Memory allocation failed
  */
 C_KZG_RET check_proof_multi(bool *out, const g1_t *commitment, const g1_t *proof, const fr_t *x, const fr_t *ys,
-                            uint64_t n, const KZGSettings *ks) {
+                            uint64_t n, const KZGSettings *ks, bool run_parallel) {
     poly interp;
     fr_t inv_x, inv_x_pow, x_pow;
     g2_t xn2, xn_minus_yn;
@@ -162,7 +162,7 @@ C_KZG_RET check_proof_multi(bool *out, const g1_t *commitment, const g1_t *proof
 
     // Interpolate at a coset.
     TRY(new_poly(&interp, n));
-    TRY(fft_fr(interp.coeffs, ys, true, n, ks->fs));
+    TRY(fft_fr(interp.coeffs, ys, true, n, ks->fs, run_parallel));
 
     // Because it is a coset, not the subgroup, we have to multiply the polynomial coefficients by x^-i
     fr_inv(&inv_x, x);
@@ -339,12 +339,12 @@ void proof_multi(void) {
     }
 
     // Verify the proof that the (unknown) polynomial has value y_i at x_i
-    TEST_CHECK(C_KZG_OK == check_proof_multi(&result, &commitment, &proof, &x, y, coset_len, &ks2));
+    TEST_CHECK(C_KZG_OK == check_proof_multi(&result, &commitment, &proof, &x, y, coset_len, &ks2, true));
     TEST_CHECK(true == result);
 
     // Change a value and check that the proof fails
     fr_add(y + coset_len / 2, y + coset_len / 2, &fr_one);
-    TEST_CHECK(C_KZG_OK == check_proof_multi(&result, &commitment, &proof, &x, y, coset_len, &ks2));
+    TEST_CHECK(C_KZG_OK == check_proof_multi(&result, &commitment, &proof, &x, y, coset_len, &ks2, true));
     TEST_CHECK(false == result);
 
     free_fft_settings(&fs1);
