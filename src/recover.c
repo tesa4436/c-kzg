@@ -188,13 +188,14 @@ C_KZG_RET recover_poly_from_samples(fr_t *reconstructed_data, fr_t *samples, uin
     // x -> k * x
     if (run_parallel) {
         if (optim > 1024) {
-            #pragma omp parallel sections
+            #pragma omp parallel
+            #pragma omp single
             {
-                #pragma omp section
+                #pragma omp task
                 {
                     scale_poly(poly_with_zero, len_samples, true);
                 }
-                #pragma omp section
+                #pragma omp task
                 {
                     scale_poly(zero_poly.coeffs, zero_poly.length, true);
                 }
@@ -214,8 +215,27 @@ C_KZG_RET recover_poly_from_samples(fr_t *reconstructed_data, fr_t *samples, uin
     fr_t *scaled_zero_poly = zero_poly.coeffs; // Renaming
 
     // Polynomial division by convolution: Q3 = Q1 / Q2
-    TRY(fft_fr(eval_scaled_poly_with_zero, scaled_poly_with_zero, false, len_samples, fs, run_parallel));
-    TRY(fft_fr(eval_scaled_zero_poly, scaled_zero_poly, false, len_samples, fs, run_parallel));
+    if (run_parallel) {
+        if (optim > 1024) {
+            #pragma omp parallel num_threads(2)
+            {
+                #pragma omp single
+                {
+                    fft_fr(eval_scaled_poly_with_zero, scaled_poly_with_zero, false, len_samples, fs, true);
+                }
+                #pragma omp single
+                {
+                    fft_fr(eval_scaled_zero_poly, scaled_zero_poly, false, len_samples, fs, true);
+                }
+            }
+        } else {
+            fft_fr(eval_scaled_poly_with_zero, scaled_poly_with_zero, false, len_samples, fs, true);
+            fft_fr(eval_scaled_zero_poly, scaled_zero_poly, false, len_samples, fs, true);
+        }
+    } else {
+        fft_fr(eval_scaled_poly_with_zero, scaled_poly_with_zero, false, len_samples, fs, false);
+        fft_fr(eval_scaled_zero_poly, scaled_zero_poly, false, len_samples, fs, false);
+    }
 
     fr_t *eval_scaled_reconstructed_poly = eval_scaled_poly_with_zero;
     for (uint64_t i = 0; i < len_samples; i++) {

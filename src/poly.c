@@ -342,13 +342,14 @@ C_KZG_RET poly_mul_fft(poly *out, const poly *a, const poly *b, FFTSettings *fs_
 
     if (run_parallel) {
         if (length >= 1024) {
-            #pragma omp parallel sections
+            #pragma omp parallel
+            #pragma omp single
             {
-                #pragma omp section
+                #pragma omp task
                 {
                     fft_fr(a_fft, a_pad, false, length, fs_p, true);
                 }
-                #pragma omp section
+                #pragma omp task
                 {
                     fft_fr(b_fft, b_pad, false, length, fs_p, true);
                 }
