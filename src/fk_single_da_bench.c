@@ -66,7 +66,7 @@ long run_bench(int scale, int max_seconds) {
 
     while (total_time < max_seconds * NANO) {
         clock_gettime(CLOCK_REALTIME, &t0);
-        assert(C_KZG_OK == da_using_fk20_single(all_proofs, &p, &fk));
+        assert(C_KZG_OK == da_using_fk20_single(all_proofs, &p, &fk, true));
         clock_gettime(CLOCK_REALTIME, &t1);
         nits++;
         total_time += tdiff(t0, t1);
