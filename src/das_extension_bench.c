@@ -71,9 +71,9 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    printf("*** Benchmarking DAS_extension, %d second%s per test.\n", nsec, nsec == 1 ? "" : "s");
+    printf("*** Benchmarking das_extension, %d second%s per test.\n", nsec, nsec == 1 ? "" : "s");
     for (int scale = 4; scale <= 15; scale++) {
-        printf("DAS_extension/scale_%d %lu ns/op\n", scale, run_bench(scale, nsec));
+        printf("das_extension/scale_%d %lu ns/op\n", scale, run_bench(scale, nsec));
     }
 
     return EXIT_SUCCESS;
