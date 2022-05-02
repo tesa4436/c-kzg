@@ -74,19 +74,16 @@ void fft_fr_fast(fr_t *out, const fr_t *in, uint64_t stride, const fr_t *roots, 
     if (half > 0) { // Tunable parameter
         if (run_parallel) {
             if (half > 256) {
-                #pragma omp parallel sections
+                #pragma omp task
                 {
-                    #pragma omp section
-                    {
-                        fft_fr_fast(out, in, stride * 2, roots, roots_stride * 2, half, true);
-                    }
-                    #pragma omp section
-                    {
-                        fft_fr_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half, true);
-                    }
+                    fft_fr_fast(out, in, stride * 2, roots, roots_stride * 2, half, true);
                 }
-                #pragma omp parallel
-                #pragma omp for
+                #pragma omp task
+                {
+                    fft_fr_fast(out + half, in + stride, stride * 2, roots, roots_stride * 2, half, true);
+                }
+                
+                #pragma omp taskwait
                 for (uint64_t i = 0; i < half; i++) {
                     fr_t y_times_root;
                     fr_mul(&y_times_root, &out[i + half], &roots[i * roots_stride]);
@@ -137,12 +134,32 @@ C_KZG_RET fft_fr(fr_t *out, const fr_t *in, bool inverse, uint64_t n, const FFTS
         fr_t inv_len;
         fr_from_uint64(&inv_len, n);
         fr_inv(&inv_len, &inv_len);
-        fft_fr_fast(out, in, 1, fs->reverse_roots_of_unity, stride, n, run_parallel);
-        for (uint64_t i = 0; i < n; i++) {
-            fr_mul(&out[i], &out[i], &inv_len);
+        if (run_parallel) {
+            #pragma omp parallel
+            {
+                #pragma omp single
+                fft_fr_fast(out, in, 1, fs->reverse_roots_of_unity, stride, n, run_parallel);
+                #pragma omp for
+                for (uint64_t i = 0; i < n; i++) {
+                    fr_mul(&out[i], &out[i], &inv_len);
+                }
+            }
+        } else {
+            fft_fr_fast(out, in, 1, fs->reverse_roots_of_unity, stride, n, run_parallel);
+            for (uint64_t i = 0; i < n; i++) {
+                fr_mul(&out[i], &out[i], &inv_len);
+            }
         }
     } else {
-        fft_fr_fast(out, in, 1, fs->expanded_roots_of_unity, stride, n, run_parallel);
+        if (run_parallel) {
+            #pragma omp parallel
+            {
+                #pragma omp single nowait
+                fft_fr_fast(out, in, 1, fs->expanded_roots_of_unity, stride, n, run_parallel);
+            }
+        } else {
+            fft_fr_fast(out, in, 1, fs->expanded_roots_of_unity, stride, n, run_parallel);
+        }
     }
     return C_KZG_OK;
 }
