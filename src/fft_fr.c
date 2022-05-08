@@ -154,7 +154,7 @@ C_KZG_RET fft_fr(fr_t *out, const fr_t *in, bool inverse, uint64_t n, const FFTS
         if (run_parallel) {
             #pragma omp parallel
             {
-                #pragma omp single
+                #pragma omp single nowait
                 fft_fr_fast(out, in, 1, fs->expanded_roots_of_unity, stride, n, run_parallel);
             }
         } else {
